@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QTabWidget,
     QToolBar, QStatusBar, QVBoxLayout, QHBoxLayout,
-    QPushButton, QInputDialog, QFileDialog, QLabel
+    QPushButton, QInputDialog, QFileDialog, QLabel, QSpinBox
 )
 from PySide6.QtCore import Qt, QTimer
 from gasp.app.sim.world import World
@@ -10,6 +10,7 @@ from gasp.app.gui.life_grid_widget import LifeGridWidget
 from gasp.app.gui.debug_panel import DebugPanel
 from gasp.app.gui.parameter_panel import ParameterPanel
 from gasp.app.gui.gamestate_panel import GamestatePanel
+from gasp.app.gui.legend_panel import LegendPanel
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -38,6 +39,19 @@ class MainWindow(QMainWindow):
         btn_reset = QPushButton("Reset")
         btn_reset.clicked.connect(self._reset)
         toolbar.addWidget(btn_reset)
+        toolbar.addSeparator()
+
+        self._btn_autoplay = QPushButton("Autoplay: Off")
+        self._btn_autoplay.clicked.connect(self._toggle_autoplay)
+        toolbar.addWidget(self._btn_autoplay)
+
+        toolbar.addWidget(QLabel("Speed"))
+        self._speed_spin = QSpinBox()
+        self._speed_spin.setRange(1, 10)
+        self._speed_spin.setValue(5)
+        self._speed_spin.setSuffix(" ticks/s")
+        self._speed_spin.valueChanged.connect(self._on_speed_changed)
+        toolbar.addWidget(self._speed_spin)
 
         # Central widget
         central = QWidget()
@@ -58,6 +72,7 @@ class MainWindow(QMainWindow):
         self.param_panel.params_applied.connect(self._on_params_applied)
         right_tabs.addTab(self.debug_panel, "Debug")
         right_tabs.addTab(self.param_panel, "Parameters")
+        right_tabs.addTab(LegendPanel(), "Legend")
         splitter.addWidget(right_tabs)
         splitter.setSizes([800, 400])
 
@@ -76,7 +91,7 @@ class MainWindow(QMainWindow):
         self._timer.timeout.connect(self._auto_step)
 
     def _setup_timer(self):
-        pass
+        self._on_speed_changed(self._speed_spin.value())
 
     def _run_steps(self, n):
         for i in range(n):
@@ -91,6 +106,7 @@ class MainWindow(QMainWindow):
             self._run_steps(n)
 
     def _reset(self):
+        self._set_autoplay(False)
         self.world = World(self.params)
         self.world.initialize_default()
         self.grid_widget.world = self.world
@@ -119,6 +135,22 @@ class MainWindow(QMainWindow):
     def _auto_step(self):
         self.world.step_world()
         self._update_ui()
+
+    def _toggle_autoplay(self):
+        self._set_autoplay(not self._auto_run)
+
+    def _set_autoplay(self, enabled: bool):
+        self._auto_run = enabled
+        if enabled:
+            self._timer.start()
+            self._btn_autoplay.setText("Autoplay: On")
+        else:
+            self._timer.stop()
+            self._btn_autoplay.setText("Autoplay: Off")
+
+    def _on_speed_changed(self, ticks_per_second: int):
+        interval_ms = max(1, int(1000 / ticks_per_second))
+        self._timer.setInterval(interval_ms)
 
     def _save_state(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save State", "", "JSON Files (*.json)")
