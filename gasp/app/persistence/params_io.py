@@ -3,8 +3,8 @@ from dataclasses import dataclass, field, asdict
 
 @dataclass
 class Parameters:
-    world_width: int = 40
-    world_height: int = 30
+    world_width: int = 32
+    world_height: int = 32
     tick_speed: float = 0.1
     initial_creature_count: int = 4
     food_spawn_rate: float = 0.05
