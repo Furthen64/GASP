@@ -110,13 +110,22 @@ class MainWindow(QMainWindow):
         self.world = World(self.params)
         self.world.initialize_default()
         self.grid_widget.world = self.world
+        self.grid_widget.clear_selection()
         self._selected_creature = None
+        self.debug_panel.clear_creature("No creature selected")
         self._update_ui()
 
     def _on_creature_selected(self, creature_id):
         self._selected_creature = self.world.creatures.get(creature_id)
         if self._selected_creature:
             self.debug_panel.update_creature(self._selected_creature, self.world)
+        else:
+            selected = self.grid_widget.selected_cell
+            if selected is None:
+                self.debug_panel.clear_creature("No creature selected")
+            else:
+                x, y = selected
+                self.debug_panel.clear_creature(f"No creature at cell ({x}, {y})")
 
     def _on_params_applied(self, params):
         self.params = params
@@ -169,6 +178,9 @@ class MainWindow(QMainWindow):
             try:
                 self.world = load_gamestate(path)
                 self.grid_widget.world = self.world
+                self.grid_widget.clear_selection()
+                self._selected_creature = None
+                self.debug_panel.clear_creature("No creature selected")
                 self._update_ui()
                 self.gamestate_panel.set_status(f"Loaded: {path}")
             except Exception as e:

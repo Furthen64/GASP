@@ -18,6 +18,7 @@ class LifeGridWidget(QWidget):
     def __init__(self, world, parent=None):
         super().__init__(parent)
         self.world = world
+        self.selected_cell = None
         self.setMinimumSize(400, 300)
 
     def paintEvent(self, event):
@@ -50,6 +51,17 @@ class LifeGridWidget(QWidget):
                 painter.setPen(QColor(255, 255, 0))
                 painter.drawRect(cx, cy, cw - 1, ch - 1)
 
+        # Draw selected cell outline (always visible, even without creature)
+        if self.selected_cell is not None:
+            sx, sy = self.selected_cell
+            painter.setPen(QColor(0, 200, 255))
+            painter.drawRect(
+                int(sx * cell_w),
+                int(sy * cell_h),
+                max(1, int(cell_w)) - 1,
+                max(1, int(cell_h)) - 1,
+            )
+
         # Step overlay
         painter.setPen(QColor(0, 0, 0))
         font = QFont()
@@ -62,8 +74,12 @@ class LifeGridWidget(QWidget):
         h = self.height()
         cell_w = w / self.world.width
         cell_h = h / self.world.height
-        gx = int(event.x() / cell_w)
-        gy = int(event.y() / cell_h)
+        pos = event.position()
+        gx = int(pos.x() / cell_w)
+        gy = int(pos.y() / cell_h)
+        gx = max(0, min(self.world.width - 1, gx))
+        gy = max(0, min(self.world.height - 1, gy))
+        self.selected_cell = (gx, gy)
         # Deselect all
         for c in self.world.creatures.values():
             c.selected = False
@@ -72,4 +88,12 @@ class LifeGridWidget(QWidget):
         if c:
             c.selected = True
             self.selected_creature_changed.emit(c.id)
+        else:
+            self.selected_creature_changed.emit(-1)
+        self.update()
+
+    def clear_selection(self):
+        self.selected_cell = None
+        for c in self.world.creatures.values():
+            c.selected = False
         self.update()
