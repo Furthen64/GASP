@@ -1,0 +1,67 @@
+import pytest
+from gasp.app.sim.genome_codec import (
+    encode_unit, decode_unit, encode_genome, decode_genome,
+    make_random_genome, validate_unit
+)
+from gasp.app.sim.genetics import Unit, Promoter
+from gasp.app.sim.constants import ActionType, SignalId, CompareOp
+from gasp.app.util.rng import RNG
+
+def make_sample_unit():
+    p = Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT,
+                  threshold=50.0, base_strength=1.5)
+    return Unit(promoter=p, target_type='gene', gene=ActionType.MOVE, module_id=None)
+
+def test_encode_decode_roundtrip():
+    unit = make_sample_unit()
+    d = encode_unit(unit)
+    unit2 = decode_unit(d)
+    assert unit2.promoter.signal_id == unit.promoter.signal_id
+    assert unit2.promoter.compare_op == unit.promoter.compare_op
+    assert unit2.promoter.threshold == unit.promoter.threshold
+    assert unit2.gene == unit.gene
+    assert unit2.target_type == unit.target_type
+
+def test_genome_encode_decode_roundtrip():
+    rng = RNG(123)
+    genome = make_random_genome(rng, 10)
+    encoded = encode_genome(genome)
+    decoded = decode_genome(encoded)
+    assert len(decoded) == len(genome)
+    for orig, dec in zip(genome, decoded):
+        assert orig.promoter.signal_id == dec.promoter.signal_id
+        assert orig.target_type == dec.target_type
+
+def test_make_random_genome_valid():
+    rng = RNG(42)
+    genome = make_random_genome(rng, 8)
+    assert len(genome) == 8
+    for unit in genome:
+        assert isinstance(unit.promoter.signal_id, SignalId)
+        assert isinstance(unit.promoter.compare_op, CompareOp)
+        if unit.target_type == 'gene':
+            assert isinstance(unit.gene, ActionType)
+        elif unit.target_type == 'module':
+            from gasp.app.sim.genetics import DEFAULT_MODULES
+            assert unit.module_id in DEFAULT_MODULES
+
+def test_decode_unit_never_crashes():
+    # Test with various garbage inputs
+    garbage_inputs = [
+        {},
+        None,
+        "not a dict",
+        {'promoter': 'bad'},
+        {'promoter': {'signal_id': 'INVALID', 'compare_op': 'BAD'}},
+        {'gene': 'NONEXISTENT'},
+        42,
+        [],
+        {'promoter': {}, 'gene': None, 'target_type': 'gene'},
+    ]
+    for garbage in garbage_inputs:
+        try:
+            result = decode_unit(garbage)
+            # Should return a valid Unit
+            assert isinstance(result, Unit)
+        except Exception as e:
+            pytest.fail(f"decode_unit crashed on input {garbage!r}: {e}")
