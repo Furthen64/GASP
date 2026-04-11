@@ -25,6 +25,7 @@ def do_move(creature, world) -> bool:
     old_x, old_y = creature.x, creature.y
     creature.x = nx
     creature.y = ny
+    world.invalidate_spatial_index()
     dist = (dx ** 2 + dy ** 2) ** 0.5
     creature.distance_traveled += dist
     return True
@@ -76,6 +77,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
             return False
         creature.y = new_y
         creature.height += 1
+        world.invalidate_spatial_index()
         return True
     elif direction == Facing.S:
         new_y = creature.y + creature.height
@@ -88,6 +90,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
                               world.width, world.height):
             return False
         creature.height += 1
+        world.invalidate_spatial_index()
         return True
     elif direction == Facing.E:
         new_x = creature.x + creature.width
@@ -100,6 +103,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
                               world.width, world.height):
             return False
         creature.width += 1
+        world.invalidate_spatial_index()
         return True
     elif direction == Facing.W:
         new_x = creature.x - 1
@@ -113,6 +117,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
             return False
         creature.x = new_x
         creature.width += 1
+        world.invalidate_spatial_index()
         return True
     return False
 

@@ -2,7 +2,8 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPainter, QColor, QFont
 from gasp.app.sim.constants import CellType
-from gasp.app.util.math_helpers import rect_cells
+from gasp.app.util.perf import RollingTimingWindow, TimingSnapshot
+from time import perf_counter
 
 CELL_COLORS = {
     CellType.GROUND: QColor(220, 220, 220),
@@ -19,9 +20,11 @@ class LifeGridWidget(QWidget):
         super().__init__(parent)
         self.world = world
         self.selected_cell = None
+        self.paint_timings = RollingTimingWindow()
         self.setMinimumSize(400, 300)
 
     def paintEvent(self, event):
+        total_start = perf_counter()
         painter = QPainter(self)
         w = self.width()
         h = self.height()
@@ -29,14 +32,17 @@ class LifeGridWidget(QWidget):
         cell_h = h / self.world.height
 
         # Draw terrain + food + toxic
+        phase_start = perf_counter()
         for x in range(self.world.width):
             for y in range(self.world.height):
                 ct = self.world.get_cell_type(x, y)
                 color = CELL_COLORS.get(ct, QColor(220, 220, 220))
                 painter.fillRect(int(x * cell_w), int(y * cell_h),
                                  max(1, int(cell_w)), max(1, int(cell_h)), color)
+        terrain_ms = (perf_counter() - phase_start) * 1000.0
 
         # Draw creatures
+        phase_start = perf_counter()
         for creature in self.world.creatures.values():
             if not creature.alive:
                 continue
@@ -50,8 +56,10 @@ class LifeGridWidget(QWidget):
             if creature.selected:
                 painter.setPen(QColor(255, 255, 0))
                 painter.drawRect(cx, cy, cw - 1, ch - 1)
+        creatures_ms = (perf_counter() - phase_start) * 1000.0
 
         # Draw selected cell outline (always visible, even without creature)
+        phase_start = perf_counter()
         if self.selected_cell is not None:
             sx, sy = self.selected_cell
             painter.setPen(QColor(0, 200, 255))
@@ -68,6 +76,19 @@ class LifeGridWidget(QWidget):
         font.setPointSize(10)
         painter.setFont(font)
         painter.drawText(5, 15, f"Step: {self.world.step}")
+        overlay_ms = (perf_counter() - phase_start) * 1000.0
+
+        self.paint_timings.add(
+            TimingSnapshot(
+                total_ms=(perf_counter() - total_start) * 1000.0,
+                phase_ms={
+                    'paint_terrain': terrain_ms,
+                    'paint_creatures': creatures_ms,
+                    'paint_overlay': overlay_ms,
+                },
+                metadata={'living_creatures': sum(1 for c in self.world.creatures.values() if c.alive)},
+            )
+        )
 
     def mousePressEvent(self, event):
         w = self.width()

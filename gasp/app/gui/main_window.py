@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QPushButton, QInputDialog, QFileDialog, QLabel, QSpinBox
 )
 from PySide6.QtCore import Qt, QTimer
+from time import perf_counter
 from gasp.app.sim.world import World
 from gasp.app.persistence.params_io import Parameters
 from gasp.app.gui.life_grid_widget import LifeGridWidget
@@ -11,6 +12,7 @@ from gasp.app.gui.debug_panel import DebugPanel
 from gasp.app.gui.parameter_panel import ParameterPanel
 from gasp.app.gui.gamestate_panel import GamestatePanel
 from gasp.app.gui.legend_panel import LegendPanel
+from gasp.app.util.perf import RollingTimingWindow, TimingSnapshot, humanize_phase_name
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -20,6 +22,7 @@ class MainWindow(QMainWindow):
         self.params = Parameters()
         self.world = World(self.params)
         self.world.initialize_default()
+        self.ui_timings = RollingTimingWindow()
         self._selected_creature = None
         self._setup_ui()
         self._setup_timer()
@@ -132,14 +135,31 @@ class MainWindow(QMainWindow):
         self.world.params = params
 
     def _update_ui(self):
+        update_start = perf_counter()
         living = sum(1 for c in self.world.creatures.values() if c.alive)
-        self.status_label.setText(f"Step: {self.world.step} | Creatures: {living}")
         self.grid_widget.world = self.world
         self.grid_widget.update()
         if self._selected_creature:
             creature = self.world.creatures.get(self._selected_creature.id)
             if creature:
                 self.debug_panel.update_creature(creature, self.world)
+        self.ui_timings.add(TimingSnapshot(total_ms=(perf_counter() - update_start) * 1000.0))
+        self.debug_panel.update_performance(
+            self.world.step_timings.summary(top_n=4),
+            self.ui_timings.summary(top_n=2),
+            self.grid_widget.paint_timings.summary(top_n=3),
+        )
+        tick_avg_ms = self.world.step_timings.average_total_ms()
+        hot_phases = ", ".join(
+            f"{humanize_phase_name(name)} {value:.1f} ms"
+            for name, value in self.world.step_timings.top_phases(top_n=2)
+        )
+        status = f"Step: {self.world.step} | Creatures: {living}"
+        if tick_avg_ms > 0:
+            status += f" | Tick avg: {tick_avg_ms:.1f} ms"
+        if hot_phases:
+            status += f" | Hot: {hot_phases}"
+        self.status_label.setText(status)
 
     def _auto_step(self):
         self.world.step_world()

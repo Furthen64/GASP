@@ -1,4 +1,5 @@
-import json
+from time import perf_counter
+
 from gasp.app.sim.constants import CellType, Facing, ActionType, SignalId, CompareOp
 from gasp.app.sim.creature import Creature, make_creature
 from gasp.app.sim.genetics import DEFAULT_MODULES
@@ -6,6 +7,7 @@ from gasp.app.sim.sensing import compute_sensed
 from gasp.app.sim.actions import execute_action
 from gasp.app.sim.fitness import update_fitness, compute_fitness
 from gasp.app.sim.history import WorldHistory
+from gasp.app.util.perf import RollingTimingWindow, TimingSnapshot
 from gasp.app.util.rng import RNG
 from gasp.app.util.math_helpers import rect_cells
 
@@ -22,6 +24,12 @@ class World:
         self.rng = RNG(seed)
         self.pending_births = []
         self.history = WorldHistory()
+        self.step_timings = RollingTimingWindow()
+        self.last_step_profile = TimingSnapshot(total_ms=0.0)
+        self._spatial_index_dirty = True
+        self._occupied_cells_cache = set()
+        self._creature_at_cache = {}
+        self._creature_count_at_index = -1
 
     def initialize_default(self):
         """Add border walls, initial food/toxic, and seed creatures."""
@@ -52,10 +60,33 @@ class World:
                     if self.is_cell_free(tx, ty):
                         c = make_creature(self.rng, self.params, birth_step=0, x=tx, y=ty)
                         self.creatures[c.id] = c
+                        self.invalidate_spatial_index()
                         break
                 else:
                     continue
                 break
+        self.invalidate_spatial_index()
+
+    def invalidate_spatial_index(self):
+        self._spatial_index_dirty = True
+
+    def _ensure_spatial_index(self):
+        if not self._spatial_index_dirty and len(self.creatures) == self._creature_count_at_index:
+            return
+
+        occupied = set()
+        creature_at = {}
+        for creature in self.creatures.values():
+            if not creature.alive:
+                continue
+            for cell in rect_cells(creature.x, creature.y, creature.width, creature.height):
+                occupied.add(cell)
+                creature_at[cell] = creature
+
+        self._occupied_cells_cache = occupied
+        self._creature_at_cache = creature_at
+        self._creature_count_at_index = len(self.creatures)
+        self._spatial_index_dirty = False
 
     def add_food(self, n):
         """Spawn n food cells on free ground."""
@@ -109,26 +140,18 @@ class World:
         ct = self.get_cell_type(x, y)
         if ct in (CellType.WALL, CellType.BORDER):
             return False
-        occupied = self.cells_occupied_by_creatures()
-        return (x, y) not in occupied
+        self._ensure_spatial_index()
+        return (x, y) not in self._occupied_cells_cache
 
     def get_creature_at(self, x, y):
         """Return creature occupying cell (x,y) or None."""
-        for c in self.creatures.values():
-            if not c.alive:
-                continue
-            cells = rect_cells(c.x, c.y, c.width, c.height)
-            if (x, y) in cells:
-                return c
-        return None
+        self._ensure_spatial_index()
+        return self._creature_at_cache.get((x, y))
 
     def cells_occupied_by_creatures(self):
         """Return set of all cells occupied by living creatures."""
-        result = set()
-        for c in self.creatures.values():
-            if c.alive:
-                result |= rect_cells(c.x, c.y, c.width, c.height)
-        return result
+        self._ensure_spatial_index()
+        return self._occupied_cells_cache
 
     def _evaluate_genome(self, creature) -> ActionType:
         """Evaluate chromosome promoters and return best action."""
@@ -205,27 +228,45 @@ class World:
 
     def step_world(self):
         """Run one full simulation tick."""
+        total_start = perf_counter()
+        phase_ms = {}
+        self._ensure_spatial_index()
+
         # 1. Increment step
         self.step += 1
 
         # 2. Spawn food/toxic per rates
+        phase_start = perf_counter()
         food_to_spawn = int(self.params.food_spawn_rate * self.width * self.height)
         if food_to_spawn < 1 and self.rng.random() < self.params.food_spawn_rate * self.width * self.height:
             food_to_spawn = 1
         if food_to_spawn > 0:
             self.add_food(food_to_spawn)
+        phase_ms['spawn_food'] = (perf_counter() - phase_start) * 1000.0
 
+        phase_start = perf_counter()
         toxic_to_spawn = int(self.params.toxic_spawn_rate * self.width * self.height)
         if toxic_to_spawn < 1 and self.rng.random() < self.params.toxic_spawn_rate * self.width * self.height:
             toxic_to_spawn = 1
         if toxic_to_spawn > 0:
             self.add_toxic(toxic_to_spawn)
+        phase_ms['spawn_toxic'] = (perf_counter() - phase_start) * 1000.0
 
         # 3. Determine creature order: sorted by id
+        phase_start = perf_counter()
         creature_order = sorted(
             [c for c in self.creatures.values() if c.alive],
             key=lambda c: c.id
         )
+        phase_ms['creature_sort'] = (perf_counter() - phase_start) * 1000.0
+
+        sense_ms = 0.0
+        evaluate_ms = 0.0
+        action_ms = 0.0
+        upkeep_ms = 0.0
+        toxic_ms = 0.0
+        death_ms = 0.0
+        any_deaths = False
 
         # 4. Process each creature
         for creature in creature_order:
@@ -236,38 +277,63 @@ class World:
             creature.age += 1
 
             # b. compute sensed values
+            phase_start = perf_counter()
             creature.sensed = compute_sensed(creature, self)
+            sense_ms += (perf_counter() - phase_start) * 1000.0
 
             # c/d. evaluate chromosome -> get best action
+            phase_start = perf_counter()
             action = self._evaluate_genome(creature)
+            evaluate_ms += (perf_counter() - phase_start) * 1000.0
 
             # e. execute action
+            phase_start = perf_counter()
             success = execute_action(action, creature, self)
             creature.last_action = action
             creature.log_action(self.step, action.name, success)
+            action_ms += (perf_counter() - phase_start) * 1000.0
 
             # f. update energy, fitness
+            phase_start = perf_counter()
             creature.energy -= self.params.energy_per_tick
             update_fitness(creature)
             fitness = compute_fitness(creature, self.params)
             creature.fitness_history.append(fitness)
             if len(creature.fitness_history) > 200:
                 creature.fitness_history.pop(0)
+            upkeep_ms += (perf_counter() - phase_start) * 1000.0
 
             # Check toxic
+            phase_start = perf_counter()
             my_cells = rect_cells(creature.x, creature.y, creature.width, creature.height)
             if my_cells & self.toxic_cells:
                 creature.energy -= 5.0  # Toxic damage
+            toxic_ms += (perf_counter() - phase_start) * 1000.0
 
             # g. check death
+            phase_start = perf_counter()
             if creature.age > self.params.max_age or creature.energy <= 0:
                 creature.alive = False
+                any_deaths = True
                 creature.event_log.append({'step': self.step, 'event': 'died',
                                            'age': creature.age, 'energy': creature.energy})
+            death_ms += (perf_counter() - phase_start) * 1000.0
+
+        if any_deaths:
+            self.invalidate_spatial_index()
+
+        phase_ms['creature_sense'] = sense_ms
+        phase_ms['creature_evaluate'] = evaluate_ms
+        phase_ms['creature_action'] = action_ms
+        phase_ms['creature_upkeep'] = upkeep_ms
+        phase_ms['creature_toxic'] = toxic_ms
+        phase_ms['creature_death'] = death_ms
 
         # 5. Spawn queued births
+        phase_start = perf_counter()
         births_to_process = list(self.pending_births)
         self.pending_births.clear()
+        births_created = 0
         for parent_id in births_to_process:
             parent = self.creatures.get(parent_id)
             if parent is None or not parent.alive:
@@ -284,10 +350,27 @@ class World:
                     child = asexual_reproduce(parent, self)
             if child:
                 self.creatures[child.id] = child
+                births_created += 1
+                self.invalidate_spatial_index()
+        phase_ms['births'] = (perf_counter() - phase_start) * 1000.0
 
         # 6. Update history
+        phase_start = perf_counter()
         living = sum(1 for c in self.creatures.values() if c.alive)
         self.history.record(self.step, living)
+        phase_ms['history'] = (perf_counter() - phase_start) * 1000.0
+
+        total_ms = (perf_counter() - total_start) * 1000.0
+        self.last_step_profile = TimingSnapshot(
+            total_ms=total_ms,
+            phase_ms=phase_ms,
+            metadata={
+                'living_creatures': living,
+                'total_creatures': len(self.creatures),
+                'births_created': births_created,
+            },
+        )
+        self.step_timings.add(self.last_step_profile)
 
     def to_dict(self):
         terrain_data = {f"{k[0]},{k[1]}": v.name for k, v in self.terrain.items()}

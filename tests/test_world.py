@@ -44,3 +44,21 @@ def test_food_no_overlap_walls(default_world):
         x, y = cell
         assert 0 < x < w.width - 1 and 0 < y < w.height - 1, \
             f"Food on border at {cell}"
+
+def test_spatial_index_matches_creature_cells(default_world):
+    w = default_world
+    occupied = w.cells_occupied_by_creatures()
+    assert occupied
+    for cell in occupied:
+        creature = w.get_creature_at(*cell)
+        assert creature is not None
+        assert creature.alive
+
+def test_step_records_timing_profile(default_world):
+    w = default_world
+    w.step_world()
+
+    assert w.last_step_profile.total_ms >= 0.0
+    assert 'creature_sense' in w.last_step_profile.phase_ms
+    assert 'creature_action' in w.last_step_profile.phase_ms
+    assert w.step_timings.latest is w.last_step_profile

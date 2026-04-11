@@ -46,6 +46,13 @@ class DebugPanel(QWidget):
             self._sense_labels[field] = lbl
         self._layout.addWidget(sense_group)
 
+        perf_group = QGroupBox("Performance")
+        perf_layout = QVBoxLayout(perf_group)
+        self._perf_label = QLabel("No timing data yet")
+        self._perf_label.setWordWrap(True)
+        perf_layout.addWidget(self._perf_label)
+        self._layout.addWidget(perf_group)
+
         # Action log
         log_group = QGroupBox("Action Log")
         log_layout = QVBoxLayout(log_group)
@@ -86,6 +93,13 @@ class DebugPanel(QWidget):
         self._chrom_text.clear()
         if self._plot_widget:
             self._plot_widget.clear()
+
+    def update_performance(self, simulation_summary, ui_summary, paint_summary):
+        self._perf_label.setText(
+            f"Simulation: {simulation_summary}\n"
+            f"UI: {ui_summary}\n"
+            f"Paint: {paint_summary}"
+        )
 
     def update_creature(self, creature, world):
         if creature is None:
