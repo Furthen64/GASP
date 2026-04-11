@@ -77,6 +77,16 @@ class DebugPanel(QWidget):
 
         self._layout.addStretch()
 
+    def clear_creature(self, message="No creature selected"):
+        for lbl in self._labels.values():
+            lbl.setText("-")
+        for lbl in self._sense_labels.values():
+            lbl.setText("-")
+        self._action_log.setText(message)
+        self._chrom_text.clear()
+        if self._plot_widget:
+            self._plot_widget.clear()
+
     def update_creature(self, creature, world):
         if creature is None:
             return
