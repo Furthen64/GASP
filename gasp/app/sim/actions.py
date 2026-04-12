@@ -124,6 +124,11 @@ def do_grow(creature, world, direction: Facing) -> bool:
 def do_reproduce(creature, world) -> bool:
     if creature.energy < world.params.reproduction_cost:
         return False
+    if not world.can_queue_birth():
+        return False
+    pregnancy_chance = min(1.0, max(0.0, world.params.pregnancy_chance))
+    if world.rng.random() >= pregnancy_chance:
+        return False
     creature.energy -= world.params.reproduction_cost
     world.pending_births.append(creature.id)
     return True

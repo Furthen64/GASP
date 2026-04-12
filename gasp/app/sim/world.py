@@ -12,7 +12,7 @@ from gasp.app.util.rng import RNG
 from gasp.app.util.math_helpers import rect_cells
 
 class World:
-    def __init__(self, params, seed=42):
+    def __init__(self, params, seed=None):
         self.params = params
         self.width = params.world_width
         self.height = params.world_height
@@ -21,6 +21,8 @@ class World:
         self.toxic_cells = set()
         self.creatures = {}  # id -> Creature
         self.step = 0
+        if seed is None:
+            seed = getattr(params, 'seed', 42)
         self.rng = RNG(seed)
         self.pending_births = []
         self.history = WorldHistory()
@@ -51,7 +53,8 @@ class World:
             (2, 2), (self.width - 3, 2),
             (2, self.height - 3), (self.width - 3, self.height - 3)
         ]
-        for i in range(self.params.initial_creature_count):
+        initial_creatures = min(self.params.initial_creature_count, self.params.max_creatures)
+        for i in range(initial_creatures):
             px, py = positions[i % len(positions)]
             # Find free cell near position
             for dx in range(5):
@@ -66,6 +69,15 @@ class World:
                     continue
                 break
         self.invalidate_spatial_index()
+
+    def living_creature_count(self):
+        return sum(1 for creature in self.creatures.values() if creature.alive)
+
+    def creature_capacity_remaining(self):
+        return max(0, self.params.max_creatures - self.living_creature_count())
+
+    def can_queue_birth(self):
+        return self.living_creature_count() + len(self.pending_births) < self.params.max_creatures
 
     def invalidate_spatial_index(self):
         self._spatial_index_dirty = True
@@ -224,7 +236,7 @@ class World:
 
         if not action_scores:
             return ActionType.IDLE
-        return max(action_scores, key=action_scores.get)
+        return max(action_scores.items(), key=lambda item: item[1])[0]
 
     def step_world(self):
         """Run one full simulation tick."""
@@ -334,7 +346,10 @@ class World:
         births_to_process = list(self.pending_births)
         self.pending_births.clear()
         births_created = 0
+        living_after_deaths = self.living_creature_count()
         for parent_id in births_to_process:
+            if living_after_deaths + births_created >= self.params.max_creatures:
+                break
             parent = self.creatures.get(parent_id)
             if parent is None or not parent.alive:
                 continue
@@ -356,7 +371,7 @@ class World:
 
         # 6. Update history
         phase_start = perf_counter()
-        living = sum(1 for c in self.creatures.values() if c.alive)
+        living = self.living_creature_count()
         self.history.record(self.step, living)
         phase_ms['history'] = (perf_counter() - phase_start) * 1000.0
 
@@ -368,6 +383,7 @@ class World:
                 'living_creatures': living,
                 'total_creatures': len(self.creatures),
                 'births_created': births_created,
+                'creature_capacity_remaining': self.creature_capacity_remaining(),
             },
         )
         self.step_timings.add(self.last_step_profile)

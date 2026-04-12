@@ -1,0 +1,28 @@
+{
+  "gasp_version": "1.0",
+  "params_version": "1.0",
+  "params": {
+    "world_width": 32,
+    "world_height": 32,
+    "tick_speed": 0.1,
+    "initial_creature_count": 4,
+    "max_creatures": 100,
+    "food_spawn_rate": 0.05,
+    "toxic_spawn_rate": 0.0001,
+    "mutation_rate": 0.05,
+    "crossover_rate": 0.7,
+    "reproduction_cost": 30.0,
+    "max_age": 500,
+    "max_size": 10,
+    "fitness_lifetime_weight": 1.0,
+    "fitness_distance_weight": 0.5,
+    "seed": 42,
+    "initial_food_count": 50,
+    "initial_toxic_count": 10,
+    "genome_min_units": 4,
+    "genome_max_units": 20,
+    "initial_energy": 100.0,
+    "energy_per_food": 20.0,
+    "energy_per_tick": 0.5
+  }
+}

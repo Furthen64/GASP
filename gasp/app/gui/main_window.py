@@ -20,12 +20,19 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("GASP v1 - Genetic Algorithm Simulation Platform")
         self.resize(1200, 800)
         self.params = Parameters()
-        self.world = World(self.params)
-        self.world.initialize_default()
+        self.world = self._create_world()
         self.ui_timings = RollingTimingWindow()
         self._selected_creature = None
         self._setup_ui()
         self._setup_timer()
+
+    def _create_world(self):
+        seed = self.params.resolve_seed()
+        world = World(self.params, seed=seed)
+        world.initialize_default()
+        if hasattr(self, 'param_panel'):
+            self.param_panel.sync_seed_value(seed)
+        return world
 
     def _setup_ui(self):
         # Toolbar
@@ -62,7 +69,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter)
 
         self.grid_widget = LifeGridWidget(self.world)
@@ -110,8 +117,7 @@ class MainWindow(QMainWindow):
 
     def _reset(self):
         self._set_autoplay(False)
-        self.world = World(self.params)
-        self.world.initialize_default()
+        self.world = self._create_world()
         self.grid_widget.world = self.world
         self.grid_widget.clear_selection()
         self._selected_creature = None

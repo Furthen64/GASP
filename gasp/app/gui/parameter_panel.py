@@ -1,10 +1,17 @@
 from PySide6.QtWidgets import (
     QWidget, QScrollArea, QVBoxLayout, QFormLayout,
-    QPushButton, QHBoxLayout, QSpinBox, QDoubleSpinBox,
+    QPushButton, QHBoxLayout, QSpinBox, QDoubleSpinBox, QComboBox,
     QGroupBox, QFileDialog
 )
 from PySide6.QtCore import Signal
-from gasp.app.persistence.params_io import Parameters, save_params, load_params
+from gasp.app.persistence.params_io import (
+    Parameters,
+    SEED_MODE_FIXED,
+    SEED_MODE_RANDOM,
+    MAX_SEED_VALUE,
+    save_params,
+    load_params,
+)
 
 class ParameterPanel(QWidget):
     params_applied = Signal(object)
@@ -24,11 +31,17 @@ class ParameterPanel(QWidget):
 
         form_layout = QFormLayout(container)
         self._spinboxes = {}
+        self._seed_mode_combo = QComboBox()
+        self._seed_mode_combo.addItem("Fixed", SEED_MODE_FIXED)
+        self._seed_mode_combo.addItem("Random", SEED_MODE_RANDOM)
+        self._seed_mode_combo.currentIndexChanged.connect(self._on_seed_mode_changed)
+        form_layout.addRow("Seed Mode:", self._seed_mode_combo)
 
         int_params = ['world_width', 'world_height', 'initial_creature_count',
+                  'max_creatures',
                       'max_age', 'max_size', 'seed', 'initial_food_count',
                       'initial_toxic_count', 'genome_min_units', 'genome_max_units']
-        float_params = ['tick_speed', 'food_spawn_rate', 'toxic_spawn_rate',
+        float_params = ['tick_speed', 'pregnancy_chance', 'food_spawn_rate', 'toxic_spawn_rate',
                         'mutation_rate', 'crossover_rate', 'reproduction_cost',
                         'fitness_lifetime_weight', 'fitness_distance_weight',
                         'initial_energy', 'energy_per_food', 'energy_per_tick']
@@ -36,7 +49,10 @@ class ParameterPanel(QWidget):
         for name in int_params:
             val = getattr(self.params, name)
             sb = QSpinBox()
-            sb.setRange(0, 100000)
+            if name == 'seed':
+                sb.setRange(0, MAX_SEED_VALUE)
+            else:
+                sb.setRange(0, 100000)
             sb.setValue(int(val))
             form_layout.addRow(name.replace('_', ' ').title() + ":", sb)
             self._spinboxes[name] = sb
@@ -65,11 +81,13 @@ class ParameterPanel(QWidget):
         btn_layout.addWidget(btn_save)
         btn_layout.addWidget(btn_reset)
         layout.addLayout(btn_layout)
+        self._sync_seed_mode()
 
     def _get_current_params(self) -> Parameters:
         kwargs = {}
         for name, sb in self._spinboxes.items():
             kwargs[name] = sb.value()
+        kwargs['seed_mode'] = self._seed_mode_combo.currentData()
         return Parameters(**kwargs)
 
     def _apply(self):
@@ -98,6 +116,21 @@ class ParameterPanel(QWidget):
         self._sync_to_ui()
 
     def _sync_to_ui(self):
+        self._sync_seed_mode()
         for name, sb in self._spinboxes.items():
             val = getattr(self.params, name)
             sb.setValue(val)
+
+    def sync_seed_value(self, seed: int):
+        self._spinboxes['seed'].setValue(int(seed))
+
+    def _sync_seed_mode(self):
+        seed_mode = getattr(self.params, 'seed_mode', SEED_MODE_FIXED)
+        index = self._seed_mode_combo.findData(seed_mode)
+        if index >= 0:
+            self._seed_mode_combo.setCurrentIndex(index)
+        self._on_seed_mode_changed()
+
+    def _on_seed_mode_changed(self):
+        is_fixed = self._seed_mode_combo.currentData() == SEED_MODE_FIXED
+        self._spinboxes['seed'].setEnabled(is_fixed)

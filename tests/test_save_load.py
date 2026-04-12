@@ -18,13 +18,16 @@ def setup_save_dir():
         shutil.rmtree(SAVE_DIR)
 
 def test_save_load_params():
-    params = Parameters(world_width=50, world_height=40, mutation_rate=0.1)
+    params = Parameters(world_width=50, world_height=40, mutation_rate=0.1,
+                        max_creatures=77, pregnancy_chance=0.35)
     path = os.path.join(SAVE_DIR, 'test_params.json')
     save_params(params, path)
     loaded = load_params(path)
     assert loaded.world_width == params.world_width
     assert loaded.world_height == params.world_height
     assert loaded.mutation_rate == params.mutation_rate
+    assert loaded.max_creatures == params.max_creatures
+    assert loaded.pregnancy_chance == params.pregnancy_chance
 
 def test_save_load_gamestate():
     CREATURE_ID_GEN.reset(0)

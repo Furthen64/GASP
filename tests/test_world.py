@@ -1,5 +1,5 @@
 import pytest
-from gasp.app.persistence.params_io import Parameters
+from gasp.app.persistence.params_io import Parameters, SEED_MODE_FIXED, SEED_MODE_RANDOM
 from gasp.app.sim.world import World
 from gasp.app.sim.constants import CellType
 
@@ -62,3 +62,31 @@ def test_step_records_timing_profile(default_world):
     assert 'creature_sense' in w.last_step_profile.phase_ms
     assert 'creature_action' in w.last_step_profile.phase_ms
     assert w.step_timings.latest is w.last_step_profile
+
+def test_initial_creatures_respect_max_creatures():
+    from gasp.app.persistence.params_io import Parameters
+    from gasp.app.util.ids import CREATURE_ID_GEN
+
+    CREATURE_ID_GEN.reset(0)
+    params = Parameters(initial_creature_count=10, max_creatures=3)
+    world = World(params)
+    world.initialize_default()
+
+    assert world.living_creature_count() == 3
+
+def test_world_uses_params_seed_when_not_overridden():
+    params = Parameters(seed=123456, seed_mode=SEED_MODE_FIXED)
+    world_a = World(params)
+    world_b = World(params)
+
+    assert world_a.rng.random() == world_b.rng.random()
+
+def test_random_seed_mode_generates_new_seed_values():
+    params = Parameters(seed=42, seed_mode=SEED_MODE_RANDOM)
+
+    first = params.resolve_seed()
+    second = params.resolve_seed()
+
+    assert 0 <= first <= 2_147_483_647
+    assert 0 <= second <= 2_147_483_647
+    assert first != second

@@ -73,6 +73,52 @@ def test_crossover_valid_length():
     for u in child_genome:
         assert isinstance(u, Unit)
 
+def test_reproduction_fails_at_creature_cap():
+    CREATURE_ID_GEN.reset(0)
+    params = Parameters(initial_creature_count=4, max_creatures=4,
+                        reproduction_cost=10.0, initial_energy=200.0)
+    w = World(params)
+    w.initialize_default()
+    parent = list(w.creatures.values())[0]
+
+    from gasp.app.sim.actions import do_reproduce
+
+    assert w.living_creature_count() == 4
+    assert do_reproduce(parent, w) is False
+    assert w.pending_births == []
+
+def test_reproduction_probability_zero_blocks_pregnancy():
+    CREATURE_ID_GEN.reset(0)
+    params = Parameters(initial_creature_count=1, max_creatures=4,
+                        pregnancy_chance=0.0, reproduction_cost=10.0,
+                        initial_energy=200.0)
+    w = World(params)
+    w.initialize_default()
+    parent = list(w.creatures.values())[0]
+    start_energy = parent.energy
+
+    from gasp.app.sim.actions import do_reproduce
+
+    assert do_reproduce(parent, w) is False
+    assert w.pending_births == []
+    assert parent.energy == start_energy
+
+def test_reproduction_probability_one_always_queues_pregnancy():
+    CREATURE_ID_GEN.reset(0)
+    params = Parameters(initial_creature_count=1, max_creatures=4,
+                        pregnancy_chance=1.0, reproduction_cost=10.0,
+                        initial_energy=200.0)
+    w = World(params)
+    w.initialize_default()
+    parent = list(w.creatures.values())[0]
+    start_energy = parent.energy
+
+    from gasp.app.sim.actions import do_reproduce
+
+    assert do_reproduce(parent, w) is True
+    assert w.pending_births == [parent.id]
+    assert parent.energy == start_energy - params.reproduction_cost
+
 def _make_random_genome(rng, n):
     from gasp.app.sim.genome_codec import make_random_genome
     return make_random_genome(rng, n)
