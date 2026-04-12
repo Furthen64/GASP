@@ -18,6 +18,9 @@ def test_creature_to_dict_roundtrip():
     rng = RNG(42)
     params = Parameters()
     c = make_creature(rng, params, birth_step=1, x=5, y=5)
+    c.food_eaten = 3
+    c.toxic_ticks = 2
+    c.move_energy_spent = 4.5
     d = c.to_dict()
     c2 = Creature.from_dict(d)
     assert c2.id == c.id
@@ -27,6 +30,9 @@ def test_creature_to_dict_roundtrip():
     assert c2.facing == c.facing
     assert len(c2.chromosome) == len(c.chromosome)
     assert c2.debug_color == c.debug_color
+    assert c2.food_eaten == 3
+    assert c2.toxic_ticks == 2
+    assert c2.move_energy_spent == pytest.approx(4.5)
 
 def test_creature_age_increments(world):
     w = world

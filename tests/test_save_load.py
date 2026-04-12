@@ -46,6 +46,11 @@ def test_save_load_gamestate():
     assert loaded_world.width == world.width
     assert loaded_world.height == world.height
     assert len(loaded_world.creatures) == len(world.creatures)
+    original = next(iter(world.creatures.values()))
+    loaded = loaded_world.creatures[original.id]
+    assert loaded.food_eaten == original.food_eaten
+    assert loaded.toxic_ticks == original.toxic_ticks
+    assert loaded.move_energy_spent == original.move_energy_spent
 
 def test_rng_state_preserved():
     CREATURE_ID_GEN.reset(0)
@@ -81,7 +86,19 @@ def test_epoch_metadata_preserved_through_save_load():
         'elite_count': 4,
         'best_creature_id': 9,
         'best_fitness': 88.5,
+        'best_fitness_breakdown': {
+            'reproduction': 40.0,
+            'survival': 10.0,
+            'exploration': 8.0,
+            'efficiency': 6.0,
+            'food': 30.0,
+            'toxic_penalty': 2.0,
+            'move_penalty': 3.5,
+            'total': 88.5,
+        },
         'best_distance': 13.0,
+        'best_food_eaten': 5,
+        'best_pregnancies': 3,
         'elite_ids': [9, 10, 11, 12],
     }
     world.epoch_history = [world.last_epoch_summary]

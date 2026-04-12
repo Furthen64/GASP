@@ -6,7 +6,7 @@ from gasp.app.sim.creature import Creature, make_creature
 from gasp.app.sim.genetics import DEFAULT_MODULES
 from gasp.app.sim.sensing import compute_sensed
 from gasp.app.sim.actions import execute_action
-from gasp.app.sim.fitness import update_fitness, compute_fitness
+from gasp.app.sim.fitness import update_fitness, compute_fitness, compute_fitness_breakdown
 from gasp.app.sim.history import WorldHistory
 from gasp.app.util.perf import RollingTimingWindow, TimingSnapshot
 from gasp.app.util.rng import RNG
@@ -107,7 +107,16 @@ class World:
             (creature, compute_fitness(creature, self.params))
             for creature in self.creatures.values()
         ]
-        ranked.sort(key=lambda item: (item[1], item[0].distance_traveled, item[0].age), reverse=True)
+        ranked.sort(
+            key=lambda item: (
+                item[1],
+                item[0].pregnancies_completed,
+                item[0].food_eaten,
+                item[0].distance_traveled,
+                item[0].age,
+            ),
+            reverse=True,
+        )
         return ranked
 
     def build_next_epoch_world(self):
@@ -129,7 +138,10 @@ class World:
             'elite_count': len(elites),
             'best_creature_id': best_creature.id if best_creature else None,
             'best_fitness': best_fitness,
+            'best_fitness_breakdown': compute_fitness_breakdown(best_creature, self.params) if best_creature else None,
             'best_distance': best_creature.distance_traveled if best_creature else 0.0,
+            'best_food_eaten': best_creature.food_eaten if best_creature else 0,
+            'best_pregnancies': best_creature.pregnancies_completed if best_creature else 0,
             'best_generation': best_creature.generation if best_creature else 0,
             'elite_ids': [creature.id for creature in elites],
         }
@@ -411,16 +423,13 @@ class World:
             phase_start = perf_counter()
             creature.energy -= self.params.energy_per_tick
             update_fitness(creature)
-            fitness = compute_fitness(creature, self.params)
-            creature.fitness_history.append(fitness)
-            if len(creature.fitness_history) > 200:
-                creature.fitness_history.pop(0)
             upkeep_ms += (perf_counter() - phase_start) * 1000.0
 
             # Check toxic
             phase_start = perf_counter()
             my_cells = rect_cells(creature.x, creature.y, creature.width, creature.height)
             if my_cells & self.toxic_cells:
+                creature.toxic_ticks += 1
                 creature.energy -= 5.0  # Toxic damage
             toxic_ms += (perf_counter() - phase_start) * 1000.0
 

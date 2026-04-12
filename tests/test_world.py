@@ -1,5 +1,7 @@
 import pytest
 from gasp.app.persistence.params_io import Parameters, SEED_MODE_FIXED, SEED_MODE_RANDOM
+from gasp.app.sim.actions import do_move, move_energy_cost
+from gasp.app.sim.fitness import compute_fitness
 from gasp.app.sim.world import World
 from gasp.app.sim.constants import CellType, ActionType, Facing, SignalId, CompareOp
 from gasp.app.sim.creature import Creature
@@ -104,6 +106,68 @@ def test_default_parameters_favor_small_randomized_runs():
     assert params.food_spawn_rate == 0.002
     assert params.initial_food_count == 40
     assert params.energy_per_food == 50.0
+    assert params.move_energy_area_scale == 0.35
+    assert params.epoch_fitness_reproduction_weight == 8.0
+
+def test_move_energy_cost_scales_with_area():
+    params = Parameters(
+        world_width=8,
+        world_height=8,
+        initial_creature_count=0,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        move_energy_base_cost=0.25,
+        move_energy_area_scale=0.5,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    small = Creature(id=1, x=2, y=2, facing=Facing.E, energy=100.0)
+    large = Creature(id=2, x=2, y=4, width=2, height=2, facing=Facing.E, energy=100.0)
+    world.creatures = {small.id: small, large.id: large}
+    world.invalidate_spatial_index()
+
+    expected_small_cost = move_energy_cost(small, params)
+    expected_large_cost = move_energy_cost(large, params)
+
+    assert expected_large_cost > expected_small_cost
+    assert do_move(small, world) is True
+    assert do_move(large, world) is True
+    assert small.energy == pytest.approx(100.0 - expected_small_cost)
+    assert large.energy == pytest.approx(100.0 - expected_large_cost)
+    assert large.move_energy_spent == pytest.approx(expected_large_cost)
+
+def test_epoch_fitness_rewards_mixed_outcomes():
+    params = Parameters(initial_energy=100.0)
+    explorer = Creature(
+        id=1,
+        lifetime_ticks=20,
+        distance_traveled=36.0,
+        energy=80.0,
+        move_energy_spent=4.0,
+    )
+    reproducer = Creature(
+        id=2,
+        lifetime_ticks=12,
+        distance_traveled=6.0,
+        energy=55.0,
+        pregnancies_completed=2,
+        food_eaten=2,
+        move_energy_spent=1.5,
+    )
+    poisoned = Creature(
+        id=3,
+        lifetime_ticks=25,
+        distance_traveled=30.0,
+        energy=35.0,
+        toxic_ticks=6,
+        move_energy_spent=8.0,
+    )
+
+    assert compute_fitness(reproducer, params) > compute_fitness(explorer, params)
+    assert compute_fitness(explorer, params) > compute_fitness(poisoned, params)
 
 def test_build_next_epoch_world_carries_best_creatures():
     params = Parameters(
@@ -127,8 +191,12 @@ def test_build_next_epoch_world_carries_best_creatures():
         generation=2,
         x=2,
         y=2,
-        lifetime_ticks=30,
-        distance_traveled=12.0,
+        lifetime_ticks=18,
+        distance_traveled=10.0,
+        pregnancies_completed=2,
+        food_eaten=3,
+        energy=60.0,
+        move_energy_spent=2.0,
         chromosome=[
             Unit(
                 promoter=Promoter(
@@ -147,8 +215,12 @@ def test_build_next_epoch_world_carries_best_creatures():
         generation=1,
         x=3,
         y=3,
-        lifetime_ticks=12,
-        distance_traveled=1.0,
+        lifetime_ticks=35,
+        distance_traveled=20.0,
+        food_eaten=1,
+        energy=20.0,
+        move_energy_spent=9.0,
+        toxic_ticks=3,
         chromosome=[
             Unit(
                 promoter=Promoter(
@@ -169,6 +241,9 @@ def test_build_next_epoch_world_carries_best_creatures():
     assert next_world.last_epoch_summary is not None
     assert next_world.last_epoch_summary['epoch'] == 1
     assert next_world.last_epoch_summary['best_creature_id'] == best.id
+    assert next_world.last_epoch_summary['best_pregnancies'] == 2
+    assert next_world.last_epoch_summary['best_food_eaten'] == 3
+    assert next_world.last_epoch_summary['best_fitness_breakdown']['reproduction'] > 0.0
     assert next_world.last_epoch_summary['elite_ids'] == [best.id, runner_up.id]
     assert next_world.seed != world.seed
     assert next_world.living_creature_count() == 2

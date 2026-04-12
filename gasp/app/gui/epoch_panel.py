@@ -44,8 +44,9 @@ class EpochPanel(QWidget):
         last_group = QGroupBox("Last Extinction")
         last_form = QFormLayout(last_group)
         self._last_labels = {}
-        for field in ['Epoch', 'Seed', 'Steps Survived', 'Best Creature', 'Best Fitness', 'Best Distance', 'Elite Count']:
+        for field in ['Epoch', 'Seed', 'Steps Survived', 'Best Creature', 'Best Fitness', 'Best Distance', 'Best Food', 'Best Pregnancies', 'Fitness Breakdown', 'Elite Count']:
             label = QLabel('-')
+            label.setWordWrap(True)
             last_form.addRow(f"{field}:", label)
             self._last_labels[field] = label
         layout.addWidget(last_group)
@@ -93,12 +94,28 @@ class EpochPanel(QWidget):
         self._last_labels['Best Fitness'].setText('-' if best_fitness is None else f"{best_fitness:.2f}")
         best_distance = summary.get('best_distance')
         self._last_labels['Best Distance'].setText('-' if best_distance is None else f"{best_distance:.2f}")
+        self._last_labels['Best Food'].setText(str(summary.get('best_food_eaten', '-')))
+        self._last_labels['Best Pregnancies'].setText(str(summary.get('best_pregnancies', '-')))
+        breakdown = summary.get('best_fitness_breakdown') or {}
+        if breakdown:
+            breakdown_text = (
+                f"rep {breakdown.get('reproduction', 0.0):.2f}, "
+                f"surv {breakdown.get('survival', 0.0):.2f}, "
+                f"explore {breakdown.get('exploration', 0.0):.2f}, "
+                f"energy {breakdown.get('efficiency', 0.0):.2f}, "
+                f"food {breakdown.get('food', 0.0):.2f}, "
+                f"toxic -{breakdown.get('toxic_penalty', 0.0):.2f}, "
+                f"move -{breakdown.get('move_penalty', 0.0):.2f}"
+            )
+        else:
+            breakdown_text = '-'
+        self._last_labels['Fitness Breakdown'].setText(breakdown_text)
         self._last_labels['Elite Count'].setText(str(summary.get('elite_count', '-')))
 
         history_lines = []
         for item in reversed(getattr(world, 'epoch_history', [])[-8:]):
             history_lines.append(
                 f"Epoch {item.get('epoch', '?')}: best #{item.get('best_creature_id', '?')} "
-                f"fitness {item.get('best_fitness', 0.0):.2f}, carried {item.get('elite_count', 0)}"
+                f"fitness {item.get('best_fitness', 0.0):.2f}, pregnancies {item.get('best_pregnancies', 0)}, carried {item.get('elite_count', 0)}"
             )
         self._history_text.setText("\n".join(history_lines) if history_lines else "No completed epochs yet")

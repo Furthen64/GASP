@@ -1,6 +1,11 @@
 from gasp.app.sim.constants import ActionType, Facing, CellType, MAX_CREATURE_SIZE
 from gasp.app.util.math_helpers import rect_cells, rect_in_bounds
 
+
+def move_energy_cost(creature, params) -> float:
+    area = max(1, creature.width * creature.height)
+    return params.move_energy_base_cost + (area * params.move_energy_area_scale)
+
 def _delta_for_facing(facing: Facing):
     return {
         Facing.N: (0, -1),
@@ -28,6 +33,8 @@ def do_move(creature, world) -> bool:
     world.invalidate_spatial_index()
     dist = (dx ** 2 + dy ** 2) ** 0.5
     creature.distance_traveled += dist
+    creature.energy -= move_energy_cost(creature, world.params)
+    creature.move_energy_spent += move_energy_cost(creature, world.params)
     return True
 
 def do_turn_left(creature, world) -> bool:
@@ -55,11 +62,13 @@ def do_eat(creature, world) -> bool:
             cell = next(iter(food_under))
             world.food_cells.discard(cell)
             creature.energy += world.params.energy_per_food
+            creature.food_eaten += 1
             return True
         return False
     cell = next(iter(food_found))
     world.food_cells.discard(cell)
     creature.energy += world.params.energy_per_food
+    creature.food_eaten += 1
     return True
 
 def do_grow(creature, world, direction: Facing) -> bool:

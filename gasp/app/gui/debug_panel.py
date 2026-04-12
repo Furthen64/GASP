@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QWidget, QScrollArea, QVBoxLayout, QLabel,
     QTextEdit, QGroupBox, QFormLayout
 )
-from gasp.app.sim.fitness import compute_fitness, projected_fitness
+from gasp.app.sim.actions import move_energy_cost
 
 try:
     import pyqtgraph as pg
@@ -29,7 +29,8 @@ class DebugPanel(QWidget):
         info_form = QFormLayout(info_group)
         self._labels = {}
         for field in ['ID', 'Generation', 'Age', 'Position', 'Size', 'Facing',
-                      'Energy', 'Pregnancies', 'Fitness', 'Distance', 'Action']:
+                      'Energy', 'Pregnancies', 'Epoch Score', 'Distance', 'Food Eaten',
+                      'Toxic Ticks', 'Move Cost', 'Move Energy', 'Action']:
             lbl = QLabel("-")
             info_form.addRow(f"{field}:", lbl)
             self._labels[field] = lbl
@@ -71,9 +72,9 @@ class DebugPanel(QWidget):
         chrom_layout.addWidget(self._chrom_text)
         self._layout.addWidget(chrom_group)
 
-        # Fitness graph
+        # Epoch score graph
         if HAS_PYQTGRAPH:
-            graph_group = QGroupBox("Fitness History")
+            graph_group = QGroupBox("Epoch Fitness History")
             graph_layout = QVBoxLayout(graph_group)
             self._plot_widget = pg.PlotWidget()
             self._plot_widget.setMaximumHeight(150)
@@ -104,7 +105,6 @@ class DebugPanel(QWidget):
     def update_creature(self, creature, world):
         if creature is None:
             return
-        fitness = compute_fitness(creature, world.params)
         self._labels['ID'].setText(str(creature.id))
         self._labels['Generation'].setText(str(creature.generation))
         self._labels['Age'].setText(str(creature.age))
@@ -113,8 +113,12 @@ class DebugPanel(QWidget):
         self._labels['Facing'].setText(creature.facing.name)
         self._labels['Energy'].setText(f"{creature.energy:.1f}")
         self._labels['Pregnancies'].setText(str(creature.pregnancies_completed))
-        self._labels['Fitness'].setText(f"{fitness:.2f}")
+        self._labels['Epoch Score'].setText("Pending until epoch end")
         self._labels['Distance'].setText(f"{creature.distance_traveled:.2f}")
+        self._labels['Food Eaten'].setText(str(creature.food_eaten))
+        self._labels['Toxic Ticks'].setText(str(creature.toxic_ticks))
+        self._labels['Move Cost'].setText(f"{move_energy_cost(creature, world.params):.2f}")
+        self._labels['Move Energy'].setText(f"{creature.move_energy_spent:.2f}")
         self._labels['Action'].setText(
             creature.last_action.name if creature.last_action else "-"
         )
@@ -150,7 +154,7 @@ class DebugPanel(QWidget):
             )
         self._chrom_text.setText("\n".join(chrom_lines))
 
-        # Fitness graph
+        # Epoch score graph
         if self._plot_widget and creature.fitness_history:
             self._plot_widget.clear()
             self._plot_widget.plot(creature.fitness_history, pen='b')

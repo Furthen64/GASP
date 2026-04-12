@@ -23,6 +23,9 @@ class Creature:
     chromosome: list = field(default_factory=list)
     distance_traveled: float = 0.0
     lifetime_ticks: int = 0
+    food_eaten: int = 0
+    toxic_ticks: int = 0
+    move_energy_spent: float = 0.0
     sensed: dict = field(default_factory=dict)
     action_log: list = field(default_factory=list)
     event_log: list = field(default_factory=list)
@@ -54,6 +57,9 @@ class Creature:
             'chromosome': encode_genome(self.chromosome),
             'distance_traveled': self.distance_traveled,
             'lifetime_ticks': self.lifetime_ticks,
+            'food_eaten': self.food_eaten,
+            'toxic_ticks': self.toxic_ticks,
+            'move_energy_spent': self.move_energy_spent,
             'sensed': self.sensed,
             'action_log': self.action_log,
             'event_log': self.event_log,
@@ -81,6 +87,9 @@ class Creature:
         c.chromosome = decode_genome(d.get('chromosome', []))
         c.distance_traveled = d.get('distance_traveled', 0.0)
         c.lifetime_ticks = d.get('lifetime_ticks', 0)
+        c.food_eaten = d.get('food_eaten', 0)
+        c.toxic_ticks = d.get('toxic_ticks', 0)
+        c.move_energy_spent = d.get('move_energy_spent', 0.0)
         c.sensed = d.get('sensed', {})
         c.action_log = d.get('action_log', [])
         c.event_log = d.get('event_log', [])

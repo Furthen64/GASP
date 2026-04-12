@@ -1,19 +1,42 @@
+from math import log1p, sqrt
+
+
 def update_fitness(creature):
-    """Update lifetime_ticks contribution."""
+    """Update per-tick counters used by epoch fitness."""
     creature.lifetime_ticks += 1
 
+
+def compute_fitness_breakdown(creature, params) -> dict:
+    initial_energy = max(1.0, float(params.initial_energy))
+    energy_ratio = max(0.0, creature.energy) / initial_energy
+    breakdown = {
+        'reproduction': params.epoch_fitness_reproduction_weight * creature.pregnancies_completed,
+        'survival': params.epoch_fitness_survival_weight * log1p(max(0, creature.lifetime_ticks)),
+        'exploration': params.epoch_fitness_exploration_weight * sqrt(max(0.0, creature.distance_traveled)),
+        'efficiency': params.epoch_fitness_efficiency_weight * energy_ratio,
+        'food': params.epoch_fitness_food_weight * creature.food_eaten,
+        'toxic_penalty': params.epoch_fitness_toxic_penalty * creature.toxic_ticks,
+        'move_penalty': params.epoch_fitness_move_penalty * creature.move_energy_spent,
+    }
+    breakdown['total'] = (
+        breakdown['reproduction'] +
+        breakdown['survival'] +
+        breakdown['exploration'] +
+        breakdown['efficiency'] +
+        breakdown['food'] -
+        breakdown['toxic_penalty'] -
+        breakdown['move_penalty']
+    )
+    return breakdown
+
+
 def compute_fitness(creature, params) -> float:
-    """Compute fitness score for a creature."""
-    fitness = (creature.lifetime_ticks * params.fitness_lifetime_weight +
-               creature.distance_traveled * params.fitness_distance_weight)
-    return fitness
+    """Compute epoch fitness score from accumulated creature outcomes."""
+    return compute_fitness_breakdown(creature, params)['total']
 
 def projected_fitness(creature, params, n_steps=10) -> list:
-    """Project fitness over next n_steps assuming current behavior."""
+    """Project fitness if current epoch state stays unchanged."""
     results = []
     current = compute_fitness(creature, params)
-    for i in range(1, n_steps + 1):
-        projected = current + (params.fitness_lifetime_weight * i +
-                               params.fitness_distance_weight * i * 0.1)
-        results.append(projected)
+    results.extend([current] * n_steps)
     return results

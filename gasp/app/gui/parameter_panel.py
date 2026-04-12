@@ -43,8 +43,12 @@ class ParameterPanel(QWidget):
                       'initial_toxic_count', 'genome_min_units', 'genome_max_units']
         float_params = ['tick_speed', 'pregnancy_chance', 'food_spawn_rate', 'toxic_spawn_rate',
                         'mutation_rate', 'crossover_rate', 'reproduction_cost',
-                        'fitness_lifetime_weight', 'fitness_distance_weight',
-                        'initial_energy', 'energy_per_food', 'energy_per_tick']
+                        'initial_energy', 'energy_per_food', 'energy_per_tick',
+                        'move_energy_base_cost', 'move_energy_area_scale',
+                        'epoch_fitness_reproduction_weight', 'epoch_fitness_survival_weight',
+                        'epoch_fitness_exploration_weight', 'epoch_fitness_efficiency_weight',
+                        'epoch_fitness_food_weight', 'epoch_fitness_toxic_penalty',
+                        'epoch_fitness_move_penalty']
 
         for name in int_params:
             val = getattr(self.params, name)
