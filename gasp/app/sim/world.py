@@ -1,3 +1,4 @@
+import copy
 from time import perf_counter
 
 from gasp.app.sim.constants import CellType, Facing, ActionType, SignalId, CompareOp
@@ -22,18 +23,25 @@ class World:
         self.creatures = {}  # id -> Creature
         self.step = 0
         if seed is None:
-            seed = getattr(params, 'seed', 42)
+            if hasattr(params, 'resolve_seed'):
+                seed = params.resolve_seed()
+            else:
+                seed = getattr(params, 'seed', 42)
+        self.seed = int(seed)
         self.rng = RNG(seed)
         self.pending_births = []
         self.history = WorldHistory()
         self.step_timings = RollingTimingWindow()
         self.last_step_profile = TimingSnapshot(total_ms=0.0)
+        self.epoch = 1
+        self.last_epoch_summary = None
+        self.epoch_history = []
         self._spatial_index_dirty = True
         self._occupied_cells_cache = set()
         self._creature_at_cache = {}
         self._creature_count_at_index = -1
 
-    def initialize_default(self):
+    def initialize_default(self, seed_creatures=None):
         """Add border walls, initial food/toxic, and seed creatures."""
         # Border walls
         for x in range(self.width):
@@ -48,30 +56,86 @@ class World:
         self.add_toxic(self.params.initial_toxic_count)
 
         # Seed creatures
-        from gasp.app.util.ids import CREATURE_ID_GEN
         positions = [
             (2, 2), (self.width - 3, 2),
             (2, self.height - 3), (self.width - 3, self.height - 3)
         ]
         initial_creatures = min(self.params.initial_creature_count, self.params.max_creatures)
+        templates = list(seed_creatures or [])[:initial_creatures]
         for i in range(initial_creatures):
             px, py = positions[i % len(positions)]
-            # Find free cell near position
+            spawned = False
             for dx in range(5):
                 for dy in range(5):
                     tx, ty = px + dx, py + dy
                     if self.is_cell_free(tx, ty):
-                        c = make_creature(self.rng, self.params, birth_step=0, x=tx, y=ty)
-                        self.creatures[c.id] = c
+                        if i < len(templates):
+                            creature = self._spawn_epoch_creature(templates[i], tx, ty)
+                        else:
+                            creature = make_creature(self.rng, self.params, birth_step=0, x=tx, y=ty)
+                        self.creatures[creature.id] = creature
                         self.invalidate_spatial_index()
+                        spawned = True
                         break
-                else:
-                    continue
-                break
+                if spawned:
+                    break
         self.invalidate_spatial_index()
+
+    def _spawn_epoch_creature(self, template, x, y):
+        from gasp.app.util.ids import CREATURE_ID_GEN
+
+        return Creature(
+            id=CREATURE_ID_GEN.next_id(),
+            parent_ids=[template.id],
+            generation=template.generation + 1,
+            birth_step=0,
+            x=x,
+            y=y,
+            width=1,
+            height=1,
+            facing=Facing.N,
+            energy=self.params.initial_energy,
+            chromosome=copy.deepcopy(template.chromosome),
+            debug_color=template.debug_color,
+        )
 
     def living_creature_count(self):
         return sum(1 for creature in self.creatures.values() if creature.alive)
+
+    def ranked_creatures(self):
+        ranked = [
+            (creature, compute_fitness(creature, self.params))
+            for creature in self.creatures.values()
+        ]
+        ranked.sort(key=lambda item: (item[1], item[0].distance_traveled, item[0].age), reverse=True)
+        return ranked
+
+    def build_next_epoch_world(self):
+        ranked = self.ranked_creatures()
+        requested_elites = self.params.initial_creature_count or 1
+        elite_count = min(requested_elites, len(ranked))
+        elites = [creature for creature, _fitness in ranked[:elite_count]]
+        best_creature, best_fitness = ranked[0] if ranked else (None, 0.0)
+        next_seed = self.params.generate_seed() if hasattr(self.params, 'generate_seed') else self.seed + 1
+        self.params.seed = int(next_seed)
+        next_world = World(self.params, seed=next_seed)
+        next_world.epoch = self.epoch + 1
+        next_world.epoch_history = list(self.epoch_history)
+        next_world.last_epoch_summary = {
+            'epoch': self.epoch,
+            'seed': self.seed,
+            'steps': self.step,
+            'population': len(self.creatures),
+            'elite_count': len(elites),
+            'best_creature_id': best_creature.id if best_creature else None,
+            'best_fitness': best_fitness,
+            'best_distance': best_creature.distance_traveled if best_creature else 0.0,
+            'best_generation': best_creature.generation if best_creature else 0,
+            'elite_ids': [creature.id for creature in elites],
+        }
+        next_world.epoch_history.append(next_world.last_epoch_summary)
+        next_world.initialize_default(seed_creatures=elites)
+        return next_world
 
     def creature_capacity_remaining(self):
         return max(0, self.params.max_creatures - self.living_creature_count())
@@ -165,8 +229,8 @@ class World:
         self._ensure_spatial_index()
         return self._occupied_cells_cache
 
-    def _evaluate_genome(self, creature) -> ActionType:
-        """Evaluate chromosome promoters and return best action."""
+    def _score_actions(self, creature) -> dict[ActionType, float]:
+        """Evaluate chromosome promoters and return accumulated action scores."""
         sensed = creature.sensed
         action_scores = {}
 
@@ -224,19 +288,57 @@ class World:
             if not fires:
                 continue
             score = unit.promoter.base_strength
-            # Collect actions from this unit
             if unit.target_type == 'gene' and unit.gene is not None:
                 action_scores[unit.gene] = action_scores.get(unit.gene, 0.0) + score
             elif unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
                 module_actions = DEFAULT_MODULES[unit.module_id]
-                # Distribute score among module actions
                 per_action = score / len(module_actions)
                 for at in module_actions:
                     action_scores[at] = action_scores.get(at, 0.0) + per_action
 
+        return action_scores
+
+    def _is_action_feasible(self, creature, action: ActionType) -> bool:
+        if action == ActionType.MOVE:
+            return bool(creature.sensed.get('can_move_forward', 0))
+        if action == ActionType.GROW_N:
+            return creature.height < self.params.max_size and all(
+                self.is_cell_free(cx, creature.y - 1)
+                for cx in range(creature.x, creature.x + creature.width)
+            )
+        if action == ActionType.GROW_S:
+            grow_y = creature.y + creature.height
+            return creature.height < self.params.max_size and all(
+                self.is_cell_free(cx, grow_y)
+                for cx in range(creature.x, creature.x + creature.width)
+            )
+        if action == ActionType.GROW_E:
+            grow_x = creature.x + creature.width
+            return creature.width < self.params.max_size and all(
+                self.is_cell_free(grow_x, cy)
+                for cy in range(creature.y, creature.y + creature.height)
+            )
+        if action == ActionType.GROW_W:
+            return creature.width < self.params.max_size and all(
+                self.is_cell_free(creature.x - 1, cy)
+                for cy in range(creature.y, creature.y + creature.height)
+            )
+        if action == ActionType.REPRODUCE:
+            return bool(creature.sensed.get('can_reproduce', 0)) and self.can_queue_birth()
+        return True
+
+    def _evaluate_genome(self, creature) -> ActionType:
+        """Return the highest-scoring action that is currently feasible."""
+        action_scores = self._score_actions(creature)
+
         if not action_scores:
             return ActionType.IDLE
-        return max(action_scores.items(), key=lambda item: item[1])[0]
+
+        ranked_actions = sorted(action_scores.items(), key=lambda item: item[1], reverse=True)
+        for action, _score in ranked_actions:
+            if self._is_action_feasible(creature, action):
+                return action
+        return ActionType.IDLE
 
     def step_world(self):
         """Run one full simulation tick."""
@@ -395,6 +497,8 @@ class World:
             'width': self.width,
             'height': self.height,
             'step': self.step,
+            'seed': self.seed,
+            'epoch': self.epoch,
             'terrain': terrain_data,
             'food_cells': [list(c) for c in self.food_cells],
             'toxic_cells': [list(c) for c in self.toxic_cells],
@@ -403,6 +507,8 @@ class World:
             'params': self.params.to_dict(),
             'history': self.history.to_dict(),
             'pending_births': self.pending_births,
+            'last_epoch_summary': self.last_epoch_summary,
+            'epoch_history': self.epoch_history,
         }
 
     @classmethod
@@ -412,10 +518,12 @@ class World:
             params_class = Parameters
         params_data = d.get('params', {})
         params = params_class.from_dict(params_data)
-        world = cls(params)
+        world = cls(params, seed=d.get('seed', getattr(params, 'seed', 42)))
         world.width = d.get('width', params.world_width)
         world.height = d.get('height', params.world_height)
         world.step = d.get('step', 0)
+        world.seed = d.get('seed', getattr(params, 'seed', 42))
+        world.epoch = d.get('epoch', 1)
         terrain_data = d.get('terrain', {})
         world.terrain = {}
         for key, val in terrain_data.items():
@@ -437,4 +545,6 @@ class World:
                 pass
         world.history = WorldHistory.from_dict(d.get('history', {}))
         world.pending_births = d.get('pending_births', [])
+        world.last_epoch_summary = d.get('last_epoch_summary')
+        world.epoch_history = d.get('epoch_history', [])
         return world

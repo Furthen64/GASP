@@ -1,7 +1,9 @@
 import pytest
 from gasp.app.persistence.params_io import Parameters, SEED_MODE_FIXED, SEED_MODE_RANDOM
 from gasp.app.sim.world import World
-from gasp.app.sim.constants import CellType
+from gasp.app.sim.constants import CellType, ActionType, Facing, SignalId, CompareOp
+from gasp.app.sim.creature import Creature
+from gasp.app.sim.genetics import Promoter, Unit
 
 @pytest.fixture
 def default_world():
@@ -25,7 +27,7 @@ def test_border_walls(default_world):
 
 def test_initial_creature_count(default_world):
     living = [c for c in default_world.creatures.values() if c.alive]
-    assert len(living) == 4, f"Expected 4 initial creatures, got {len(living)}"
+    assert len(living) == 8, f"Expected 8 initial creatures, got {len(living)}"
 
 def test_step_increments(default_world):
     w = default_world
@@ -90,3 +92,139 @@ def test_random_seed_mode_generates_new_seed_values():
     assert 0 <= first <= 2_147_483_647
     assert 0 <= second <= 2_147_483_647
     assert first != second
+
+def test_default_parameters_favor_small_randomized_runs():
+    params = Parameters()
+
+    assert params.world_width == 64
+    assert params.world_height == 42
+    assert params.initial_creature_count == 8
+    assert params.max_creatures == 10
+    assert params.seed_mode == SEED_MODE_RANDOM
+    assert params.food_spawn_rate == 0.002
+    assert params.initial_food_count == 40
+    assert params.energy_per_food == 50.0
+
+def test_build_next_epoch_world_carries_best_creatures():
+    params = Parameters(
+        world_width=8,
+        world_height=8,
+        initial_creature_count=2,
+        max_creatures=2,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        seed=123,
+        seed_mode=SEED_MODE_FIXED,
+    )
+    world = World(params)
+    world.initialize_default(seed_creatures=[])
+    world.creatures = {}
+
+    best = Creature(
+        id=10,
+        generation=2,
+        x=2,
+        y=2,
+        lifetime_ticks=30,
+        distance_traveled=12.0,
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=2.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            )
+        ],
+    )
+    runner_up = Creature(
+        id=11,
+        generation=1,
+        x=3,
+        y=3,
+        lifetime_ticks=12,
+        distance_traveled=1.0,
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_RIGHT,
+            )
+        ],
+    )
+    world.creatures = {best.id: best, runner_up.id: runner_up}
+    next_world = world.build_next_epoch_world()
+
+    assert next_world.epoch == 2
+    assert next_world.last_epoch_summary is not None
+    assert next_world.last_epoch_summary['epoch'] == 1
+    assert next_world.last_epoch_summary['best_creature_id'] == best.id
+    assert next_world.last_epoch_summary['elite_ids'] == [best.id, runner_up.id]
+    assert next_world.seed != world.seed
+    assert next_world.living_creature_count() == 2
+
+    offspring = sorted(next_world.creatures.values(), key=lambda creature: creature.parent_ids[0])
+    assert [creature.parent_ids[0] for creature in offspring] == [best.id, runner_up.id]
+    assert offspring[0].generation == best.generation + 1
+    assert offspring[0].chromosome[0].gene == best.chromosome[0].gene
+
+def test_blocked_move_falls_back_to_feasible_action():
+    params = Parameters(
+        world_width=6,
+        world_height=6,
+        initial_creature_count=0,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=1,
+        y=1,
+        facing=Facing.N,
+        energy=100.0,
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=2.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_RIGHT,
+            ),
+        ],
+    )
+    world.creatures[creature.id] = creature
+    world.invalidate_spatial_index()
+
+    world.step_world()
+
+    assert creature.last_action == ActionType.TURN_RIGHT
+    assert creature.facing == Facing.E
+    assert (creature.x, creature.y) == (1, 1)

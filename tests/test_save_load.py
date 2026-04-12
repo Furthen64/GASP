@@ -66,3 +66,31 @@ def test_rng_state_preserved():
 
     assert pre_load_vals == post_load_vals, \
         "RNG state should be preserved through save/load"
+
+def test_epoch_metadata_preserved_through_save_load():
+    CREATURE_ID_GEN.reset(0)
+    params = Parameters(seed=123, seed_mode='fixed')
+    world = World(params)
+    world.initialize_default()
+    world.step_world()
+    world.epoch = 3
+    world.last_epoch_summary = {
+        'epoch': 2,
+        'seed': 111,
+        'steps': 44,
+        'elite_count': 4,
+        'best_creature_id': 9,
+        'best_fitness': 88.5,
+        'best_distance': 13.0,
+        'elite_ids': [9, 10, 11, 12],
+    }
+    world.epoch_history = [world.last_epoch_summary]
+
+    path = os.path.join(SAVE_DIR, 'test_epoch.json')
+    save_gamestate(world, path)
+
+    loaded_world = load_gamestate(path)
+    assert loaded_world.epoch == 3
+    assert loaded_world.seed == world.seed
+    assert loaded_world.last_epoch_summary == world.last_epoch_summary
+    assert loaded_world.epoch_history == world.epoch_history

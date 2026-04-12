@@ -1,6 +1,31 @@
 from gasp.app.sim.genetics import Promoter, Unit, DEFAULT_MODULES
 from gasp.app.sim.constants import ActionType, SignalId, CompareOp
 
+
+def _baseline_locomotion_units() -> list[Unit]:
+    return [
+        Unit(
+            promoter=Promoter(
+                signal_id=SignalId.ENERGY,
+                compare_op=CompareOp.GT,
+                threshold=0.0,
+                base_strength=2.5,
+            ),
+            target_type='gene',
+            gene=ActionType.MOVE,
+        ),
+        Unit(
+            promoter=Promoter(
+                signal_id=SignalId.ENERGY,
+                compare_op=CompareOp.GT,
+                threshold=0.0,
+                base_strength=1.5,
+            ),
+            target_type='gene',
+            gene=ActionType.TURN_RIGHT,
+        ),
+    ]
+
 def encode_unit(unit: Unit) -> dict:
     return {
         'promoter': {
@@ -48,12 +73,16 @@ def decode_genome(lst: list) -> list:
     return [decode_unit(d) for d in lst]
 
 def make_random_genome(rng, n_units: int = 8) -> list:
-    units = []
+    if n_units <= 0:
+        return []
+
+    baseline_units = _baseline_locomotion_units()[:n_units]
+    units = list(baseline_units)
     signal_ids = list(SignalId)
     compare_ops = list(CompareOp)
     action_types = list(ActionType)
     module_ids = list(DEFAULT_MODULES.keys())
-    for _ in range(n_units):
+    for _ in range(len(units), n_units):
         promoter = Promoter(
             signal_id=rng.choice(signal_ids),
             compare_op=rng.choice(compare_ops),

@@ -36,6 +36,10 @@ def test_make_random_genome_valid():
     rng = RNG(42)
     genome = make_random_genome(rng, 8)
     assert len(genome) == 8
+    assert genome[0].gene == ActionType.MOVE
+    assert genome[1].gene == ActionType.TURN_RIGHT
+    assert genome[0].promoter.signal_id == SignalId.ENERGY
+    assert genome[1].promoter.signal_id == SignalId.ENERGY
     for unit in genome:
         assert isinstance(unit.promoter.signal_id, SignalId)
         assert isinstance(unit.promoter.compare_op, CompareOp)
@@ -44,6 +48,12 @@ def test_make_random_genome_valid():
         elif unit.target_type == 'module':
             from gasp.app.sim.genetics import DEFAULT_MODULES
             assert unit.module_id in DEFAULT_MODULES
+
+def test_make_random_genome_respects_requested_length_for_small_genomes():
+    rng = RNG(7)
+    genome = make_random_genome(rng, 1)
+    assert len(genome) == 1
+    assert genome[0].gene == ActionType.MOVE
 
 def test_decode_unit_never_crashes():
     # Test with various garbage inputs

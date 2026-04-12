@@ -9,6 +9,7 @@ from gasp.app.sim.world import World
 from gasp.app.persistence.params_io import Parameters
 from gasp.app.gui.life_grid_widget import LifeGridWidget
 from gasp.app.gui.debug_panel import DebugPanel
+from gasp.app.gui.epoch_panel import EpochPanel
 from gasp.app.gui.parameter_panel import ParameterPanel
 from gasp.app.gui.gamestate_panel import GamestatePanel
 from gasp.app.gui.legend_panel import LegendPanel
@@ -25,6 +26,7 @@ class MainWindow(QMainWindow):
         self._selected_creature = None
         self._setup_ui()
         self._setup_timer()
+        self._update_ui()
 
     def _create_world(self):
         seed = self.params.resolve_seed()
@@ -78,9 +80,11 @@ class MainWindow(QMainWindow):
 
         right_tabs = QTabWidget()
         self.debug_panel = DebugPanel()
+        self.epoch_panel = EpochPanel()
         self.param_panel = ParameterPanel(self.params)
         self.param_panel.params_applied.connect(self._on_params_applied)
         right_tabs.addTab(self.debug_panel, "Debug")
+        right_tabs.addTab(self.epoch_panel, "Epochs")
         right_tabs.addTab(self.param_panel, "Parameters")
         right_tabs.addTab(LegendPanel(), "Legend")
         splitter.addWidget(right_tabs)
@@ -93,7 +97,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.gamestate_panel)
 
         # Status bar
-        self.status_label = QLabel("Step: 0 | Creatures: 4")
+        self.status_label = QLabel("Epoch: 1 | Step: 0 | Creatures: 0")
         self.statusBar().addWidget(self.status_label)
 
         self._auto_run = False
@@ -105,10 +109,27 @@ class MainWindow(QMainWindow):
 
     def _run_steps(self, n):
         for i in range(n):
-            self.world.step_world()
+            self._advance_world()
             if i % 10 == 0:
                 self._update_ui()
         self._update_ui()
+
+    def _advance_world(self):
+        self.world.step_world()
+        if self.world.living_creature_count() == 0 and self.world.creatures:
+            self._start_next_epoch()
+
+    def _start_next_epoch(self):
+        previous_world = self.world
+        self.world = previous_world.build_next_epoch_world()
+        self.grid_widget.world = self.world
+        self.grid_widget.clear_selection()
+        self._selected_creature = None
+        self.debug_panel.clear_creature("No creature selected")
+        self.gamestate_panel.set_status(
+            f"Epoch {self.world.epoch} started from epoch {previous_world.epoch} elites"
+        )
+        self.param_panel.sync_seed_value(self.world.seed)
 
     def _run_n_steps(self):
         n, ok = QInputDialog.getInt(self, "Step N", "How many steps?", 100, 1, 100000)
@@ -145,6 +166,7 @@ class MainWindow(QMainWindow):
         living = sum(1 for c in self.world.creatures.values() if c.alive)
         self.grid_widget.world = self.world
         self.grid_widget.update()
+        self.epoch_panel.update_world(self.world)
         if self._selected_creature:
             creature = self.world.creatures.get(self._selected_creature.id)
             if creature:
@@ -160,7 +182,7 @@ class MainWindow(QMainWindow):
             f"{humanize_phase_name(name)} {value:.1f} ms"
             for name, value in self.world.step_timings.top_phases(top_n=2)
         )
-        status = f"Step: {self.world.step} | Creatures: {living}"
+        status = f"Epoch: {getattr(self.world, 'epoch', 1)} | Step: {self.world.step} | Creatures: {living}"
         if tick_avg_ms > 0:
             status += f" | Tick avg: {tick_avg_ms:.1f} ms"
         if hot_phases:
@@ -168,7 +190,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(status)
 
     def _auto_step(self):
-        self.world.step_world()
+        self._advance_world()
         self._update_ui()
 
     def _toggle_autoplay(self):
@@ -207,6 +229,7 @@ class MainWindow(QMainWindow):
                 self.grid_widget.clear_selection()
                 self._selected_creature = None
                 self.debug_panel.clear_creature("No creature selected")
+                self.param_panel.sync_seed_value(self.world.seed)
                 self._update_ui()
                 self.gamestate_panel.set_status(f"Loaded: {path}")
             except Exception as e:
