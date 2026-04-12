@@ -9,7 +9,7 @@ def choose_child_position(parent, world):
     ring = list(neighbor_ring(parent.x, parent.y, parent.width, parent.height))
     world.rng.shuffle(ring)
     for cx, cy in ring:
-        if world.is_cell_free(cx, cy):
+        if world.is_cell_movable_to(cx, cy):
             return (cx, cy)
     return None
 

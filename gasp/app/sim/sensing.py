@@ -50,14 +50,14 @@ def compute_sensed(creature, world) -> dict:
 
     # Can grow: check if any adjacent cell is free ground (within bounds, not occupied, not wall)
     can_grow = int(any(
-        ct == CellType.GROUND and world.is_cell_free(cx, cy)
+        ct == CellType.GROUND and world.is_cell_movable_to(cx, cy)
         for cx, cy, ct in ring
     ))
 
     # Can move forward
     front = _front_cell(creature, world)
     can_move = int(all(
-        world.is_cell_free(cx, cy)
+        world.is_cell_movable_to(cx, cy)
         for cx, cy in front
     ) and len(front) > 0)
 
@@ -83,6 +83,6 @@ def find_adjacent_free_spot(creature, world):
     """Find an adjacent free cell for a new child."""
     ring = neighbor_ring(creature.x, creature.y, creature.width, creature.height)
     for cx, cy in ring:
-        if world.is_cell_free(cx, cy):
+        if world.is_cell_movable_to(cx, cy):
             return (cx, cy)
     return None

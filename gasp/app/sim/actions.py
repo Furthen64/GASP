@@ -20,7 +20,7 @@ def do_move(creature, world) -> bool:
                           world.width, world.height):
         return False
     for cx, cy in cells_to_check:
-        if not world.is_cell_free(cx, cy):
+        if not world.is_cell_movable_to(cx, cy):
             return False
     old_x, old_y = creature.x, creature.y
     creature.x = nx
@@ -70,7 +70,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
         new_cells = {(cx, new_y) for cx in range(creature.x, creature.x + creature.width)}
         if creature.height >= MAX_CREATURE_SIZE:
             return False
-        if any(not world.is_cell_free(cx, cy) for cx, cy in new_cells):
+        if any(not world.is_cell_movable_to(cx, cy) for cx, cy in new_cells):
             return False
         if not rect_in_bounds(creature.x, new_y, creature.width, creature.height + 1,
                               world.width, world.height):
@@ -84,7 +84,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
         new_cells = {(cx, new_y) for cx in range(creature.x, creature.x + creature.width)}
         if creature.height >= MAX_CREATURE_SIZE:
             return False
-        if any(not world.is_cell_free(cx, cy) for cx, cy in new_cells):
+        if any(not world.is_cell_movable_to(cx, cy) for cx, cy in new_cells):
             return False
         if not rect_in_bounds(creature.x, creature.y, creature.width, creature.height + 1,
                               world.width, world.height):
@@ -97,7 +97,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
         new_cells = {(new_x, cy) for cy in range(creature.y, creature.y + creature.height)}
         if creature.width >= MAX_CREATURE_SIZE:
             return False
-        if any(not world.is_cell_free(cx, cy) for cx, cy in new_cells):
+        if any(not world.is_cell_movable_to(cx, cy) for cx, cy in new_cells):
             return False
         if not rect_in_bounds(creature.x, creature.y, creature.width + 1, creature.height,
                               world.width, world.height):
@@ -110,7 +110,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
         new_cells = {(new_x, cy) for cy in range(creature.y, creature.y + creature.height)}
         if creature.width >= MAX_CREATURE_SIZE:
             return False
-        if any(not world.is_cell_free(cx, cy) for cx, cy in new_cells):
+        if any(not world.is_cell_movable_to(cx, cy) for cx, cy in new_cells):
             return False
         if not rect_in_bounds(new_x, creature.y, creature.width + 1, creature.height,
                               world.width, world.height):
