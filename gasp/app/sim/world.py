@@ -68,7 +68,7 @@ class World:
             for dx in range(5):
                 for dy in range(5):
                     tx, ty = px + dx, py + dy
-                    if self.is_cell_free(tx, ty):
+                    if self.is_cell_movable_to(tx, ty):
                         if i < len(templates):
                             creature = self._spawn_epoch_creature(templates[i], tx, ty)
                         else:
@@ -209,7 +209,7 @@ class World:
             return CellType.TOXIC
         return CellType.GROUND
 
-    def is_cell_free(self, x, y) -> bool:
+    def is_cell_movable_to(self, x, y) -> bool:
         """Return True if cell has no wall, no creature, not border."""
         if x < 0 or y < 0 or x >= self.width or y >= self.height:
             return False
@@ -303,24 +303,24 @@ class World:
             return bool(creature.sensed.get('can_move_forward', 0))
         if action == ActionType.GROW_N:
             return creature.height < self.params.max_size and all(
-                self.is_cell_free(cx, creature.y - 1)
+                self.is_cell_movable_to(cx, creature.y - 1)
                 for cx in range(creature.x, creature.x + creature.width)
             )
         if action == ActionType.GROW_S:
             grow_y = creature.y + creature.height
             return creature.height < self.params.max_size and all(
-                self.is_cell_free(cx, grow_y)
+                self.is_cell_movable_to(cx, grow_y)
                 for cx in range(creature.x, creature.x + creature.width)
             )
         if action == ActionType.GROW_E:
             grow_x = creature.x + creature.width
             return creature.width < self.params.max_size and all(
-                self.is_cell_free(grow_x, cy)
+                self.is_cell_movable_to(grow_x, cy)
                 for cy in range(creature.y, creature.y + creature.height)
             )
         if action == ActionType.GROW_W:
             return creature.width < self.params.max_size and all(
-                self.is_cell_free(creature.x - 1, cy)
+                self.is_cell_movable_to(creature.x - 1, cy)
                 for cy in range(creature.y, creature.y + creature.height)
             )
         if action == ActionType.REPRODUCE:

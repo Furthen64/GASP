@@ -1,15 +1,41 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QGroupBox, QFormLayout, QTextEdit
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QGroupBox, QFormLayout, QTextEdit,
+    QCheckBox, QHBoxLayout, QSlider
+)
 
 
 class EpochPanel(QWidget):
+    lifespan_enabled_changed = Signal(bool)
+    lifespan_seconds_changed = Signal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
+        self.setMaximumHeight(320)
+
+        settings_group = QGroupBox("Epoch Settings")
+        settings_layout = QVBoxLayout(settings_group)
+        self._lifespan_enabled = QCheckBox("Enable epoch lifespan")
+        self._lifespan_enabled.toggled.connect(self.lifespan_enabled_changed)
+        settings_layout.addWidget(self._lifespan_enabled)
+
+        slider_row = QHBoxLayout()
+        slider_row.addWidget(QLabel("Seconds"))
+        self._lifespan_slider = QSlider(Qt.Orientation.Horizontal)
+        self._lifespan_slider.setRange(0, 120)
+        self._lifespan_slider.setValue(0)
+        self._lifespan_slider.valueChanged.connect(self._on_lifespan_changed)
+        slider_row.addWidget(self._lifespan_slider)
+        self._lifespan_value = QLabel("0 s")
+        slider_row.addWidget(self._lifespan_value)
+        settings_layout.addLayout(slider_row)
+        layout.addWidget(settings_group)
 
         current_group = QGroupBox("Current Epoch")
         current_form = QFormLayout(current_group)
         self._current_labels = {}
-        for field in ['Epoch', 'Seed', 'Step', 'Living', 'Total Creatures']:
+        for field in ['Epoch', 'Seed', 'Step', 'Living', 'Total Creatures', 'Elapsed', 'Lifespan']:
             label = QLabel('-')
             current_form.addRow(f"{field}:", label)
             self._current_labels[field] = label
@@ -33,12 +59,30 @@ class EpochPanel(QWidget):
         layout.addWidget(history_group)
         layout.addStretch()
 
-    def update_world(self, world):
+    def _on_lifespan_changed(self, value):
+        self._lifespan_value.setText(f"{value} s")
+        self.lifespan_seconds_changed.emit(value)
+
+    def set_lifespan_settings(self, enabled: bool, seconds: int):
+        self._lifespan_enabled.blockSignals(True)
+        self._lifespan_slider.blockSignals(True)
+        self._lifespan_enabled.setChecked(enabled)
+        self._lifespan_slider.setValue(seconds)
+        self._lifespan_value.setText(f"{seconds} s")
+        self._lifespan_enabled.blockSignals(False)
+        self._lifespan_slider.blockSignals(False)
+
+    def update_world(self, world, elapsed_seconds: float = 0.0, lifespan_enabled: bool = False, lifespan_seconds: int = 0):
         self._current_labels['Epoch'].setText(str(getattr(world, 'epoch', 1)))
         self._current_labels['Seed'].setText(str(getattr(world, 'seed', '-')))
         self._current_labels['Step'].setText(str(world.step))
         self._current_labels['Living'].setText(str(world.living_creature_count()))
         self._current_labels['Total Creatures'].setText(str(len(world.creatures)))
+        self._current_labels['Elapsed'].setText(f"{elapsed_seconds:.1f} s")
+        if lifespan_enabled:
+            self._current_labels['Lifespan'].setText(f"{lifespan_seconds} s")
+        else:
+            self._current_labels['Lifespan'].setText("Disabled")
 
         summary = getattr(world, 'last_epoch_summary', None) or {}
         self._last_labels['Epoch'].setText(str(summary.get('epoch', '-')))

@@ -24,6 +24,9 @@ class MainWindow(QMainWindow):
         self.world = self._create_world()
         self.ui_timings = RollingTimingWindow()
         self._selected_creature = None
+        self._epoch_lifespan_enabled = False
+        self._epoch_lifespan_seconds = 0
+        self._epoch_started_at = perf_counter()
         self._setup_ui()
         self._setup_timer()
         self._update_ui()
@@ -74,17 +77,27 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(splitter)
 
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
+
         self.grid_widget = LifeGridWidget(self.world)
         self.grid_widget.selected_creature_changed.connect(self._on_creature_selected)
-        splitter.addWidget(self.grid_widget)
+        left_layout.addWidget(self.grid_widget, 1)
+
+        self.epoch_panel = EpochPanel()
+        self.epoch_panel.lifespan_enabled_changed.connect(self._on_epoch_lifespan_enabled_changed)
+        self.epoch_panel.lifespan_seconds_changed.connect(self._on_epoch_lifespan_seconds_changed)
+        self.epoch_panel.set_lifespan_settings(self._epoch_lifespan_enabled, self._epoch_lifespan_seconds)
+        left_layout.addWidget(self.epoch_panel)
+        splitter.addWidget(left_panel)
 
         right_tabs = QTabWidget()
         self.debug_panel = DebugPanel()
-        self.epoch_panel = EpochPanel()
         self.param_panel = ParameterPanel(self.params)
         self.param_panel.params_applied.connect(self._on_params_applied)
         right_tabs.addTab(self.debug_panel, "Debug")
-        right_tabs.addTab(self.epoch_panel, "Epochs")
         right_tabs.addTab(self.param_panel, "Parameters")
         right_tabs.addTab(LegendPanel(), "Legend")
         splitter.addWidget(right_tabs)
@@ -115,20 +128,26 @@ class MainWindow(QMainWindow):
         self._update_ui()
 
     def _advance_world(self):
+        if self._epoch_lifespan_reached():
+            self._start_next_epoch(reason='lifespan')
+            return
         self.world.step_world()
         if self.world.living_creature_count() == 0 and self.world.creatures:
-            self._start_next_epoch()
+            self._start_next_epoch(reason='extinction')
 
-    def _start_next_epoch(self):
+    def _start_next_epoch(self, reason='extinction'):
         previous_world = self.world
         self.world = previous_world.build_next_epoch_world()
+        self._epoch_started_at = perf_counter()
         self.grid_widget.world = self.world
         self.grid_widget.clear_selection()
         self._selected_creature = None
         self.debug_panel.clear_creature("No creature selected")
-        self.gamestate_panel.set_status(
-            f"Epoch {self.world.epoch} started from epoch {previous_world.epoch} elites"
-        )
+        if reason == 'lifespan':
+            status = f"Epoch {self.world.epoch} started after lifespan limit in epoch {previous_world.epoch}"
+        else:
+            status = f"Epoch {self.world.epoch} started from epoch {previous_world.epoch} elites"
+        self.gamestate_panel.set_status(status)
         self.param_panel.sync_seed_value(self.world.seed)
 
     def _run_n_steps(self):
@@ -139,6 +158,7 @@ class MainWindow(QMainWindow):
     def _reset(self):
         self._set_autoplay(False)
         self.world = self._create_world()
+        self._epoch_started_at = perf_counter()
         self.grid_widget.world = self.world
         self.grid_widget.clear_selection()
         self._selected_creature = None
@@ -161,12 +181,36 @@ class MainWindow(QMainWindow):
         self.params = params
         self.world.params = params
 
+    def _epoch_elapsed_seconds(self):
+        return max(0.0, perf_counter() - self._epoch_started_at)
+
+    def _epoch_lifespan_reached(self):
+        return (
+            self._epoch_lifespan_enabled
+            and self._epoch_lifespan_seconds > 0
+            and self._epoch_elapsed_seconds() >= self._epoch_lifespan_seconds
+        )
+
+    def _on_epoch_lifespan_enabled_changed(self, enabled: bool):
+        self._epoch_lifespan_enabled = enabled
+        self._epoch_started_at = perf_counter()
+        self._update_ui()
+
+    def _on_epoch_lifespan_seconds_changed(self, seconds: int):
+        self._epoch_lifespan_seconds = seconds
+        self._update_ui()
+
     def _update_ui(self):
         update_start = perf_counter()
         living = sum(1 for c in self.world.creatures.values() if c.alive)
         self.grid_widget.world = self.world
         self.grid_widget.update()
-        self.epoch_panel.update_world(self.world)
+        self.epoch_panel.update_world(
+            self.world,
+            elapsed_seconds=self._epoch_elapsed_seconds(),
+            lifespan_enabled=self._epoch_lifespan_enabled,
+            lifespan_seconds=self._epoch_lifespan_seconds,
+        )
         if self._selected_creature:
             creature = self.world.creatures.get(self._selected_creature.id)
             if creature:
@@ -225,6 +269,7 @@ class MainWindow(QMainWindow):
             from gasp.app.persistence.gamestate_io import load_gamestate
             try:
                 self.world = load_gamestate(path)
+                self._epoch_started_at = perf_counter()
                 self.grid_widget.world = self.world
                 self.grid_widget.clear_selection()
                 self._selected_creature = None
