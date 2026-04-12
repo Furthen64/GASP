@@ -431,6 +431,10 @@ class World:
             if my_cells & self.toxic_cells:
                 creature.toxic_ticks += 1
                 creature.energy -= 5.0  # Toxic damage
+            fitness_estimate = compute_fitness(creature, self.params)
+            creature.fitness_history.append(fitness_estimate)
+            if len(creature.fitness_history) > 200:
+                creature.fitness_history.pop(0)
             toxic_ms += (perf_counter() - phase_start) * 1000.0
 
             # g. check death

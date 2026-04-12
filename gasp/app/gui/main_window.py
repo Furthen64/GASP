@@ -93,14 +93,14 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.epoch_panel)
         splitter.addWidget(left_panel)
 
-        right_tabs = QTabWidget()
+        self.right_tabs = QTabWidget()
         self.debug_panel = DebugPanel()
         self.param_panel = ParameterPanel(self.params)
         self.param_panel.params_applied.connect(self._on_params_applied)
-        right_tabs.addTab(self.debug_panel, "Debug")
-        right_tabs.addTab(self.param_panel, "Parameters")
-        right_tabs.addTab(LegendPanel(), "Legend")
-        splitter.addWidget(right_tabs)
+        self.right_tabs.addTab(self.debug_panel, "Debug")
+        self.right_tabs.addTab(self.param_panel, "Parameters")
+        self.right_tabs.addTab(LegendPanel(), "Legend")
+        splitter.addWidget(self.right_tabs)
         splitter.setSizes([800, 400])
 
         # Gamestate panel at bottom
@@ -140,15 +140,36 @@ class MainWindow(QMainWindow):
         self.world = previous_world.build_next_epoch_world()
         self._epoch_started_at = perf_counter()
         self.grid_widget.world = self.world
-        self.grid_widget.clear_selection()
-        self._selected_creature = None
-        self.debug_panel.clear_creature("No creature selected")
+        if not self._auto_select_epoch_winner(previous_world):
+            self.grid_widget.clear_selection()
+            self._selected_creature = None
+            self.debug_panel.clear_creature("No creature selected")
         if reason == 'lifespan':
             status = f"Epoch {self.world.epoch} started after lifespan limit in epoch {previous_world.epoch}"
         else:
             status = f"Epoch {self.world.epoch} started from epoch {previous_world.epoch} elites"
         self.gamestate_panel.set_status(status)
         self.param_panel.sync_seed_value(self.world.seed)
+
+    def _auto_select_epoch_winner(self, previous_world) -> bool:
+        if self.right_tabs.currentWidget() is not self.debug_panel:
+            return False
+        summary = getattr(self.world, 'last_epoch_summary', None) or {}
+        best_parent_id = summary.get('best_creature_id')
+        selected = None
+        if best_parent_id is not None:
+            for creature in self.world.creatures.values():
+                if creature.parent_ids and creature.parent_ids[0] == best_parent_id:
+                    selected = creature
+                    break
+        if selected is None and self.world.creatures:
+            ranked = self.world.ranked_creatures()
+            if ranked:
+                selected = ranked[0][0]
+        if selected is None:
+            return False
+        self.grid_widget.select_creature(selected)
+        return True
 
     def _run_n_steps(self):
         n, ok = QInputDialog.getInt(self, "Step N", "How many steps?", 100, 1, 100000)

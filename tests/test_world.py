@@ -67,6 +67,17 @@ def test_step_records_timing_profile(default_world):
     assert 'creature_action' in w.last_step_profile.phase_ms
     assert w.step_timings.latest is w.last_step_profile
 
+def test_step_records_epoch_score_history(default_world):
+    w = default_world
+    creature = next(iter(w.creatures.values()))
+
+    assert creature.fitness_history == []
+
+    w.step_world()
+
+    assert len(creature.fitness_history) == 1
+    assert isinstance(creature.fitness_history[0], float)
+
 def test_initial_creatures_respect_max_creatures():
     from gasp.app.persistence.params_io import Parameters
     from gasp.app.util.ids import CREATURE_ID_GEN

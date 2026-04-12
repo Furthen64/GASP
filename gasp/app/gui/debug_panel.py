@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QGroupBox, QFormLayout
 )
 from gasp.app.sim.actions import move_energy_cost
+from gasp.app.sim.fitness import compute_fitness
 
 try:
     import pyqtgraph as pg
@@ -74,7 +75,7 @@ class DebugPanel(QWidget):
 
         # Epoch score graph
         if HAS_PYQTGRAPH:
-            graph_group = QGroupBox("Epoch Fitness History")
+            graph_group = QGroupBox("Epoch Score Trend")
             graph_layout = QVBoxLayout(graph_group)
             self._plot_widget = pg.PlotWidget()
             self._plot_widget.setMaximumHeight(150)
@@ -113,7 +114,7 @@ class DebugPanel(QWidget):
         self._labels['Facing'].setText(creature.facing.name)
         self._labels['Energy'].setText(f"{creature.energy:.1f}")
         self._labels['Pregnancies'].setText(str(creature.pregnancies_completed))
-        self._labels['Epoch Score'].setText("Pending until epoch end")
+        self._labels['Epoch Score'].setText(f"{compute_fitness(creature, world.params):.2f} (estimate)")
         self._labels['Distance'].setText(f"{creature.distance_traveled:.2f}")
         self._labels['Food Eaten'].setText(str(creature.food_eaten))
         self._labels['Toxic Ticks'].setText(str(creature.toxic_ticks))

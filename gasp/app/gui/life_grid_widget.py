@@ -118,3 +118,14 @@ class LifeGridWidget(QWidget):
         for c in self.world.creatures.values():
             c.selected = False
         self.update()
+
+    def select_creature(self, creature):
+        if creature is None:
+            self.clear_selection()
+            self.selected_creature_changed.emit(-1)
+            return
+        self.selected_cell = (creature.x, creature.y)
+        for candidate in self.world.creatures.values():
+            candidate.selected = candidate.id == creature.id
+        self.selected_creature_changed.emit(creature.id)
+        self.update()
