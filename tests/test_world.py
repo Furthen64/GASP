@@ -1,7 +1,8 @@
 import pytest
 from gasp.app.persistence.params_io import Parameters, SEED_MODE_FIXED, SEED_MODE_RANDOM
 from gasp.app.sim.actions import do_move, move_energy_cost
-from gasp.app.sim.fitness import compute_fitness
+from gasp.app.sim.fitness import compute_fitness, compute_fitness_breakdown
+from gasp.app.sim.sensing import compute_sensed
 from gasp.app.sim.world import World
 from gasp.app.sim.constants import CellType, ActionType, Facing, SignalId, CompareOp
 from gasp.app.sim.creature import Creature
@@ -122,6 +123,7 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.epoch_fitness_survival_weight == 0.0
     assert params.epoch_fitness_exploration_weight == 1.0
     assert params.epoch_fitness_food_weight == 25.0
+    assert params.epoch_fitness_move_penalty == 0.0
 
 def test_move_energy_cost_scales_with_area():
     params = Parameters(
@@ -152,6 +154,67 @@ def test_move_energy_cost_scales_with_area():
     assert small.energy == pytest.approx(100.0 - expected_small_cost)
     assert large.energy == pytest.approx(100.0 - expected_large_cost)
     assert large.move_energy_spent == pytest.approx(expected_large_cost)
+
+def test_moving_over_food_grants_immediate_epoch_fitness():
+    params = Parameters(
+        world_width=8,
+        world_height=8,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+        move_energy_base_cost=0.0,
+        move_energy_area_scale=0.0,
+        initial_energy=100.0,
+        epoch_fitness_food_weight=25.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    mover = Creature(
+        id=1,
+        x=2,
+        y=2,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(2, 2)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            )
+        ],
+    )
+    world.creatures = {mover.id: mover}
+    world.food_cells = {(3, 2)}
+    world.invalidate_spatial_index()
+
+    before = compute_fitness(mover, params)
+    before_breakdown = compute_fitness_breakdown(mover, params)
+    assert mover.fitness_history == []
+
+    world.step_world()
+
+    assert (mover.x, mover.y) == (3, 2)
+    assert mover.food_eaten == 1
+    assert (3, 2) not in world.food_cells
+    after = compute_fitness(mover, params)
+    after_breakdown = compute_fitness_breakdown(mover, params)
+
+    assert after_breakdown['food'] == pytest.approx(
+        before_breakdown['food'] + params.epoch_fitness_food_weight
+    )
+    assert after >= before + params.epoch_fitness_food_weight
+    assert mover.fitness_history[-1] == pytest.approx(after)
 
 def test_epoch_fitness_rewards_mixed_outcomes():
     params = Parameters(initial_energy=100.0)
@@ -203,6 +266,142 @@ def test_epoch_fitness_prefers_exploration_over_turning_in_place():
     )
 
     assert compute_fitness(explorer, params) > compute_fitness(turning, params)
+
+def test_compute_sensed_reports_directional_food_and_space():
+    params = Parameters(
+        world_width=8,
+        world_height=8,
+        initial_creature_count=0,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(id=1, x=3, y=3, facing=Facing.N, energy=100.0, visited_positions=[(3, 3)])
+    world.creatures = {creature.id: creature}
+    world.food_cells = {(3, 2), (2, 3), (4, 3)}
+    world.invalidate_spatial_index()
+
+    sensed = compute_sensed(creature, world)
+
+    assert sensed['food_ahead'] == 1
+    assert sensed['food_left'] == 1
+    assert sensed['food_right'] == 1
+    assert sensed['free_ahead'] == 0
+    assert sensed['can_eat'] == 1
+
+def test_step_turns_toward_directional_food():
+    params = Parameters(
+        world_width=8,
+        world_height=8,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=3,
+        y=3,
+        facing=Facing.N,
+        energy=100.0,
+        visited_positions=[(3, 3)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.FOOD_LEFT,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=3.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_LEFT,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.CAN_MOVE,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            ),
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.food_cells = {(2, 3)}
+    world.invalidate_spatial_index()
+
+    world.step_world()
+
+    assert creature.last_action == ActionType.TURN_LEFT
+    assert creature.facing == Facing.W
+    assert (creature.x, creature.y) == (3, 3)
+
+def test_step_skips_eat_when_no_food_is_reachable():
+    params = Parameters(
+        world_width=8,
+        world_height=8,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+        move_energy_base_cost=0.0,
+        move_energy_area_scale=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=3,
+        y=3,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(3, 3)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=3.0,
+                ),
+                target_type='gene',
+                gene=ActionType.EAT,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.CAN_MOVE,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            ),
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.invalidate_spatial_index()
+
+    world.step_world()
+
+    assert creature.last_action == ActionType.MOVE
+    assert (creature.x, creature.y) == (4, 3)
 
 def test_build_next_epoch_world_carries_best_creatures():
     params = Parameters(

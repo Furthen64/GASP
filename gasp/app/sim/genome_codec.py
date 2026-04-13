@@ -6,7 +6,7 @@ def _baseline_locomotion_units() -> list[Unit]:
     return [
         Unit(
             promoter=Promoter(
-                signal_id=SignalId.ENERGY,
+                signal_id=SignalId.CAN_MOVE,
                 compare_op=CompareOp.GT,
                 threshold=0.0,
                 base_strength=2.5,
@@ -16,13 +16,53 @@ def _baseline_locomotion_units() -> list[Unit]:
         ),
         Unit(
             promoter=Promoter(
-                signal_id=SignalId.ENERGY,
+                signal_id=SignalId.WALL_AHEAD,
                 compare_op=CompareOp.GT,
                 threshold=0.0,
-                base_strength=1.5,
+                base_strength=3.0,
             ),
             target_type='gene',
             gene=ActionType.TURN_RIGHT,
+        ),
+        Unit(
+            promoter=Promoter(
+                signal_id=SignalId.FOOD_LEFT,
+                compare_op=CompareOp.GT,
+                threshold=0.0,
+                base_strength=3.5,
+            ),
+            target_type='gene',
+            gene=ActionType.TURN_LEFT,
+        ),
+        Unit(
+            promoter=Promoter(
+                signal_id=SignalId.FOOD_RIGHT,
+                compare_op=CompareOp.GT,
+                threshold=0.0,
+                base_strength=3.5,
+            ),
+            target_type='gene',
+            gene=ActionType.TURN_RIGHT,
+        ),
+        Unit(
+            promoter=Promoter(
+                signal_id=SignalId.FOOD_AHEAD,
+                compare_op=CompareOp.GT,
+                threshold=0.0,
+                base_strength=4.0,
+            ),
+            target_type='gene',
+            gene=ActionType.MOVE,
+        ),
+        Unit(
+            promoter=Promoter(
+                signal_id=SignalId.CAN_EAT,
+                compare_op=CompareOp.GT,
+                threshold=0.0,
+                base_strength=4.5,
+            ),
+            target_type='gene',
+            gene=ActionType.EAT,
         ),
     ]
 

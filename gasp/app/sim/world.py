@@ -315,6 +315,26 @@ class World:
                 return float(sensed.get('can_move_forward', 0))
             elif signal_id == SignalId.CAN_REPRODUCE:
                 return float(sensed.get('can_reproduce', 0))
+            elif signal_id == SignalId.CAN_EAT:
+                return float(sensed.get('can_eat', 0))
+            elif signal_id == SignalId.FOOD_AHEAD:
+                return float(sensed.get('food_ahead', 0))
+            elif signal_id == SignalId.FOOD_LEFT:
+                return float(sensed.get('food_left', 0))
+            elif signal_id == SignalId.FOOD_RIGHT:
+                return float(sensed.get('food_right', 0))
+            elif signal_id == SignalId.WALL_AHEAD:
+                return float(sensed.get('wall_ahead', 0))
+            elif signal_id == SignalId.WALL_LEFT:
+                return float(sensed.get('wall_left', 0))
+            elif signal_id == SignalId.WALL_RIGHT:
+                return float(sensed.get('wall_right', 0))
+            elif signal_id == SignalId.FREE_AHEAD:
+                return float(sensed.get('free_ahead', 0))
+            elif signal_id == SignalId.FREE_LEFT:
+                return float(sensed.get('free_left', 0))
+            elif signal_id == SignalId.FREE_RIGHT:
+                return float(sensed.get('free_right', 0))
             return 0.0
 
         def compare(value, op, threshold):
@@ -373,6 +393,8 @@ class World:
             )
         if action == ActionType.REPRODUCE:
             return bool(creature.sensed.get('can_reproduce', 0)) and self.can_queue_birth()
+        if action == ActionType.EAT:
+            return bool(creature.sensed.get('can_eat', 0))
         return True
 
     def _evaluate_genome(self, creature) -> ActionType:

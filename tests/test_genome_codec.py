@@ -38,8 +38,8 @@ def test_make_random_genome_valid():
     assert len(genome) == 8
     assert genome[0].gene == ActionType.MOVE
     assert genome[1].gene == ActionType.TURN_RIGHT
-    assert genome[0].promoter.signal_id == SignalId.ENERGY
-    assert genome[1].promoter.signal_id == SignalId.ENERGY
+    assert genome[0].promoter.signal_id == SignalId.CAN_MOVE
+    assert genome[1].promoter.signal_id == SignalId.WALL_AHEAD
     for unit in genome:
         assert isinstance(unit.promoter.signal_id, SignalId)
         assert isinstance(unit.promoter.compare_op, CompareOp)
@@ -54,6 +54,7 @@ def test_make_random_genome_respects_requested_length_for_small_genomes():
     genome = make_random_genome(rng, 1)
     assert len(genome) == 1
     assert genome[0].gene == ActionType.MOVE
+    assert genome[0].promoter.signal_id == SignalId.CAN_MOVE
 
 def test_decode_unit_never_crashes():
     # Test with various garbage inputs

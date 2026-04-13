@@ -43,6 +43,16 @@ class SignalId(Enum):
     CAN_GROW = auto()
     CAN_MOVE = auto()
     CAN_REPRODUCE = auto()
+    CAN_EAT = auto()
+    FOOD_AHEAD = auto()
+    FOOD_LEFT = auto()
+    FOOD_RIGHT = auto()
+    WALL_AHEAD = auto()
+    WALL_LEFT = auto()
+    WALL_RIGHT = auto()
+    FREE_AHEAD = auto()
+    FREE_LEFT = auto()
+    FREE_RIGHT = auto()
 
 class CompareOp(Enum):
     LT = auto()

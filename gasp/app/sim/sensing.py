@@ -28,6 +28,37 @@ def _front_cell(creature, world):
             front.add((cx - 1, cy))
     return front - cells
 
+
+def _side_cells(creature, side):
+    if creature.facing == Facing.N:
+        if side == 'left':
+            return {(creature.x - 1, cy) for cy in range(creature.y, creature.y + creature.height)}
+        return {(creature.x + creature.width, cy) for cy in range(creature.y, creature.y + creature.height)}
+    if creature.facing == Facing.S:
+        if side == 'left':
+            return {(creature.x + creature.width, cy) for cy in range(creature.y, creature.y + creature.height)}
+        return {(creature.x - 1, cy) for cy in range(creature.y, creature.y + creature.height)}
+    if creature.facing == Facing.E:
+        if side == 'left':
+            return {(cx, creature.y - 1) for cx in range(creature.x, creature.x + creature.width)}
+        return {(cx, creature.y + creature.height) for cx in range(creature.x, creature.x + creature.width)}
+    if side == 'left':
+        return {(cx, creature.y + creature.height) for cx in range(creature.x, creature.x + creature.width)}
+    return {(cx, creature.y - 1) for cx in range(creature.x, creature.x + creature.width)}
+
+
+def _count_cell_types(world, cells):
+    counts = {
+        CellType.FOOD: 0,
+        CellType.TOXIC: 0,
+        CellType.WALL: 0,
+        CellType.BORDER: 0,
+        CellType.GROUND: 0,
+    }
+    for cx, cy in cells:
+        counts[world.get_cell_type(cx, cy)] += 1
+    return counts
+
 def compute_sensed(creature, world) -> dict:
     ring = neighbor_ring_cells(creature, world)
     food_count = sum(1 for _, _, ct in ring if ct == CellType.FOOD)
@@ -61,10 +92,18 @@ def compute_sensed(creature, world) -> dict:
         for cx, cy in front
     ) and len(front) > 0)
 
+    left = _side_cells(creature, 'left')
+    right = _side_cells(creature, 'right')
+    front_counts = _count_cell_types(world, front)
+    left_counts = _count_cell_types(world, left)
+    right_counts = _count_cell_types(world, right)
+
+    can_eat = int(food_count > 0 or any(cell in world.food_cells for cell in my_cells))
+
     # Can reproduce
     params = world.params
     can_reproduce = int(
-        creature.energy >= params.reproduction_cost * 1.5 and
+        creature.energy >= params.reproduction_energy_threshold() and
         find_adjacent_free_spot(creature, world) is not None
     )
 
@@ -77,6 +116,16 @@ def compute_sensed(creature, world) -> dict:
         'can_grow': can_grow,
         'can_move_forward': can_move,
         'can_reproduce': can_reproduce,
+        'can_eat': can_eat,
+        'food_ahead': front_counts[CellType.FOOD],
+        'food_left': left_counts[CellType.FOOD],
+        'food_right': right_counts[CellType.FOOD],
+        'wall_ahead': front_counts[CellType.WALL] + front_counts[CellType.BORDER],
+        'wall_left': left_counts[CellType.WALL] + left_counts[CellType.BORDER],
+        'wall_right': right_counts[CellType.WALL] + right_counts[CellType.BORDER],
+        'free_ahead': front_counts[CellType.GROUND],
+        'free_left': left_counts[CellType.GROUND],
+        'free_right': right_counts[CellType.GROUND],
     }
 
 def find_adjacent_free_spot(creature, world):

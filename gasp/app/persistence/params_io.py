@@ -8,19 +8,19 @@ MAX_SEED_VALUE = 2_147_483_647
 
 @dataclass
 class Parameters:
-    world_width: int = 80
+    world_width: int = 70
     world_height: int = 64
     tick_speed: float = 0.1
     initial_creature_count: int = 8
     max_creatures: int = 25
     pregnancy_chance: float = 0.2
-    food_spawn_rate: float = 0.0
-    toxic_spawn_rate: float = 0.001
-    mutation_rate: float = 0.05
+    food_spawn_rate: float = 0.0001
+    toxic_spawn_rate: float = 0.0
+    mutation_rate: float = 0.1
     crossover_rate: float = 0.7
     reproduction_cost: float = 30.0
     max_age: int = 500
-    max_size: int = 10
+    max_size: int = 4
     fitness_lifetime_weight: float = 1.0
     fitness_distance_weight: float = 0.5
     seed: int = 42
@@ -41,7 +41,10 @@ class Parameters:
     epoch_fitness_efficiency_weight: float = 2.5
     epoch_fitness_food_weight: float = 25.0
     epoch_fitness_toxic_penalty: float = 1.5
-    epoch_fitness_move_penalty: float = 0.35
+    epoch_fitness_move_penalty: float = 0.0
+
+    def reproduction_energy_threshold(self) -> float:
+        return self.initial_energy + self.reproduction_cost
 
     def to_dict(self):
         return asdict(self)

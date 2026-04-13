@@ -14,6 +14,18 @@ def _delta_for_facing(facing: Facing):
         Facing.W: (-1, 0),
     }[facing]
 
+
+def _consume_food(creature, world, cells) -> int:
+    consumed = rect_cells(creature.x, creature.y, creature.width, creature.height) & world.food_cells if cells is None else set(cells) & world.food_cells
+    if not consumed:
+        return 0
+    for cell in consumed:
+        world.food_cells.discard(cell)
+    count = len(consumed)
+    creature.energy += world.params.energy_per_food * count
+    creature.food_eaten += count
+    return count
+
 def do_move(creature, world) -> bool:
     dx, dy = _delta_for_facing(creature.facing)
     nx, ny = creature.x + dx, creature.y + dy
@@ -35,6 +47,7 @@ def do_move(creature, world) -> bool:
     creature.distance_traveled += dist
     creature.energy -= move_energy_cost(creature, world.params)
     creature.move_energy_spent += move_energy_cost(creature, world.params)
+    _consume_food(creature, world, new_cells)
     return True
 
 def do_turn_left(creature, world) -> bool:
@@ -57,18 +70,10 @@ def do_eat(creature, world) -> bool:
     food_found = ring & world.food_cells
     if not food_found:
         # Also check under creature
-        food_under = my_cells & world.food_cells
-        if food_under:
-            cell = next(iter(food_under))
-            world.food_cells.discard(cell)
-            creature.energy += world.params.energy_per_food
-            creature.food_eaten += 1
+        if _consume_food(creature, world, my_cells):
             return True
         return False
-    cell = next(iter(food_found))
-    world.food_cells.discard(cell)
-    creature.energy += world.params.energy_per_food
-    creature.food_eaten += 1
+    _consume_food(creature, world, {next(iter(food_found))})
     return True
 
 def do_grow(creature, world, direction: Facing) -> bool:
@@ -131,7 +136,7 @@ def do_grow(creature, world, direction: Facing) -> bool:
     return False
 
 def do_reproduce(creature, world) -> bool:
-    if creature.energy < world.params.reproduction_cost:
+    if creature.energy < world.params.reproduction_energy_threshold():
         return False
     if not world.can_queue_birth():
         return False

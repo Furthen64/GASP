@@ -1,12 +1,12 @@
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPainter, QColor, QFont
+from PySide6.QtGui import QPainter, QColor, QFont, QPen
 from gasp.app.sim.constants import CellType
 from gasp.app.util.perf import RollingTimingWindow, TimingSnapshot
 from time import perf_counter
 
 CELL_COLORS = {
-    CellType.GROUND: QColor(220, 220, 220),
+    CellType.GROUND: QColor(70, 70, 70),
     CellType.WALL: QColor(80, 80, 80),
     CellType.BORDER: QColor(20, 20, 20),
     CellType.FOOD: QColor(50, 200, 50),
@@ -48,27 +48,30 @@ class LifeGridWidget(QWidget):
                 continue
             r, g, b = creature.debug_color
             color = QColor(r, g, b)
-            cx = int(creature.x * cell_w)
-            cy = int(creature.y * cell_h)
-            cw = max(1, int(creature.width * cell_w))
-            ch = max(1, int(creature.height * cell_h))
+            cx, cy, cw, ch = self._fill_rect_for_creature(creature, cell_w, cell_h)
             painter.fillRect(cx, cy, cw, ch, color)
             if creature.selected:
-                painter.setPen(QColor(255, 255, 0))
-                painter.drawRect(cx, cy, cw - 1, ch - 1)
+                highlight_padding = max(2, int(min(cell_w, cell_h) * 0.15))
+                highlight_width = max(3, int(min(cell_w, cell_h) * 0.18))
+                painter.setPen(QPen(QColor(255, 255, 0), highlight_width))
+                painter.drawRect(
+                    cx - highlight_padding,
+                    cy - highlight_padding,
+                    cw + (highlight_padding * 2),
+                    ch + (highlight_padding * 2),
+                )
         creatures_ms = (perf_counter() - phase_start) * 1000.0
 
         # Draw selected cell outline (always visible, even without creature)
         phase_start = perf_counter()
         if self.selected_cell is not None:
             sx, sy = self.selected_cell
-            painter.setPen(QColor(0, 200, 255))
-            painter.drawRect(
-                int(sx * cell_w),
-                int(sy * cell_h),
-                max(1, int(cell_w)) - 1,
-                max(1, int(cell_h)) - 1,
-            )
+            selected_creature = self.world.get_creature_at(sx, sy)
+            painter.setPen(QPen(QColor(0, 200, 255), max(2, int(min(cell_w, cell_h) * 0.12))))
+            if selected_creature is None:
+                painter.drawRect(*self._rect_for_cell(sx, sy, cell_w, cell_h))
+            else:
+                painter.drawRect(*self._outline_rect_for_creature(selected_creature, cell_w, cell_h))
 
         # Step overlay
         painter.setPen(QColor(0, 0, 0))
@@ -129,3 +132,28 @@ class LifeGridWidget(QWidget):
             candidate.selected = candidate.id == creature.id
         self.selected_creature_changed.emit(creature.id)
         self.update()
+
+    def _rect_for_cell(self, x, y, cell_w, cell_h):
+        return (
+            int(x * cell_w),
+            int(y * cell_h),
+            max(1, int(cell_w)) - 1,
+            max(1, int(cell_h)) - 1,
+        )
+
+    def _fill_rect_for_creature(self, creature, cell_w, cell_h):
+        return (
+            int(creature.x * cell_w),
+            int(creature.y * cell_h),
+            max(1, int(creature.width * cell_w)),
+            max(1, int(creature.height * cell_h)),
+        )
+
+    def _outline_rect_for_creature(self, creature, cell_w, cell_h):
+        x, y, width, height = self._fill_rect_for_creature(creature, cell_w, cell_h)
+        return (
+            x,
+            y,
+            max(1, width) - 1,
+            max(1, height) - 1,
+        )

@@ -111,6 +111,7 @@ def test_reproduction_probability_one_always_queues_pregnancy():
     w = World(params)
     w.initialize_default()
     parent = list(w.creatures.values())[0]
+    parent.energy = params.reproduction_energy_threshold() + 5.0
     start_energy = parent.energy
 
     from gasp.app.sim.actions import do_reproduce
@@ -118,6 +119,21 @@ def test_reproduction_probability_one_always_queues_pregnancy():
     assert do_reproduce(parent, w) is True
     assert w.pending_births == [parent.id]
     assert parent.energy == start_energy - params.reproduction_cost
+
+def test_reproduction_requires_surplus_energy_above_spawn_budget():
+    CREATURE_ID_GEN.reset(0)
+    params = Parameters(initial_creature_count=1, max_creatures=4,
+                        pregnancy_chance=1.0, reproduction_cost=10.0,
+                        initial_energy=200.0)
+    w = World(params)
+    w.initialize_default()
+    parent = list(w.creatures.values())[0]
+
+    from gasp.app.sim.actions import do_reproduce
+
+    assert parent.energy == params.initial_energy
+    assert do_reproduce(parent, w) is False
+    assert w.pending_births == []
 
 def _make_random_genome(rng, n):
     from gasp.app.sim.genome_codec import make_random_genome
