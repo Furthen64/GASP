@@ -49,11 +49,11 @@ class Parameters:
     runtime_learning_rate: float = 0.4
     runtime_learning_decay: float = 0.92
     runtime_reward_action_success: float = 0.2
-    runtime_reward_food: float = 5.0
+    runtime_reward_food: float = 25.0
     runtime_reward_new_cell: float = 1.0
     runtime_reward_reproduce: float = 3.0
     runtime_penalty_failed_action: float = 1.4
-    runtime_penalty_idle: float = 0.8
+    runtime_penalty_idle: float = 2.5
     runtime_penalty_blocked_idle: float = 1.2
     runtime_penalty_toxic: float = 2.5
     runtime_stagnation_window: int = 5
