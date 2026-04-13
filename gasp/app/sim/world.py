@@ -364,7 +364,31 @@ class World:
                 for at in module_actions:
                     action_scores[at] = action_scores.get(at, 0.0) + per_action
 
+        self._apply_exploration_turn_bias(creature, action_scores)
+
         return action_scores
+
+    def _apply_exploration_turn_bias(self, creature, action_scores: dict[ActionType, float]):
+        if creature.straight_move_streak < 6:
+            return
+        if not creature.sensed.get('can_move_forward', 0):
+            return
+        if creature.sensed.get('food_ahead', 0) or creature.sensed.get('food_left', 0) or creature.sensed.get('food_right', 0):
+            return
+
+        free_left = bool(creature.sensed.get('free_left', 0))
+        free_right = bool(creature.sensed.get('free_right', 0))
+        if not free_left and not free_right:
+            return
+
+        if free_left and not free_right:
+            turn_action = ActionType.TURN_LEFT
+        elif free_right and not free_left:
+            turn_action = ActionType.TURN_RIGHT
+        else:
+            turn_action = ActionType.TURN_LEFT if (creature.id + self.step + creature.straight_move_streak) % 2 == 0 else ActionType.TURN_RIGHT
+
+        action_scores[turn_action] = max(action_scores.get(turn_action, 0.0), 3.25)
 
     def _is_action_feasible(self, creature, action: ActionType) -> bool:
         if action == ActionType.MOVE:
@@ -409,6 +433,16 @@ class World:
             if self._is_action_feasible(creature, action):
                 return action
         return ActionType.IDLE
+
+    def _record_action_outcome(self, creature, action: ActionType, success: bool):
+        if action == ActionType.MOVE and success:
+            creature.straight_move_streak += 1
+            return
+        if action in (ActionType.TURN_LEFT, ActionType.TURN_RIGHT):
+            creature.straight_move_streak = 0
+            return
+        if action == ActionType.MOVE and not success:
+            creature.straight_move_streak = 0
 
     def step_world(self):
         """Run one full simulation tick."""
@@ -473,6 +507,7 @@ class World:
             # e. execute action
             phase_start = perf_counter()
             success = execute_action(action, creature, self)
+            self._record_action_outcome(creature, action, success)
             creature.last_action = action
             creature.log_action(self.step, action.name, success)
             current_position = (creature.x, creature.y)

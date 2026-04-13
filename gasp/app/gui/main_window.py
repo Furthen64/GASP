@@ -62,8 +62,8 @@ class MainWindow(QMainWindow):
 
         toolbar.addWidget(QLabel("Speed"))
         self._speed_spin = QSpinBox()
-        self._speed_spin.setRange(1, 10)
-        self._speed_spin.setValue(5)
+        self._speed_spin.setRange(1, 60)
+        self._speed_spin.setValue(20)
         self._speed_spin.setSuffix(" ticks/s")
         self._speed_spin.valueChanged.connect(self._on_speed_changed)
         toolbar.addWidget(self._speed_spin)

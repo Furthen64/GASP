@@ -51,6 +51,7 @@ def test_save_load_gamestate():
     assert loaded.food_eaten == original.food_eaten
     assert loaded.toxic_ticks == original.toxic_ticks
     assert loaded.move_energy_spent == original.move_energy_spent
+    assert loaded.straight_move_streak == original.straight_move_streak
     assert loaded.visited_positions == original.visited_positions
 
 def test_rng_state_preserved():

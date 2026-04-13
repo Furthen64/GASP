@@ -110,12 +110,12 @@ def test_random_seed_mode_generates_new_seed_values():
 def test_default_parameters_favor_sparse_epoch_runs():
     params = Parameters()
 
-    assert params.world_width == 80
+    assert params.world_width == 70
     assert params.world_height == 64
     assert params.initial_creature_count == 8
     assert params.max_creatures == 25
     assert params.seed_mode == SEED_MODE_RANDOM
-    assert params.food_spawn_rate == 0.0
+    assert params.food_spawn_rate == 0.0001
     assert params.initial_food_count == 102
     assert params.energy_per_food == 50.0
     assert params.move_energy_area_scale == 0.35
@@ -402,6 +402,54 @@ def test_step_skips_eat_when_no_food_is_reachable():
 
     assert creature.last_action == ActionType.MOVE
     assert (creature.x, creature.y) == (4, 3)
+
+def test_long_straight_run_gets_turn_bias_in_open_space():
+    params = Parameters(
+        world_width=20,
+        world_height=12,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+        move_energy_base_cost=0.0,
+        move_energy_area_scale=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=3,
+        y=5,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(3, 5)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.CAN_MOVE,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=2.5,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            ),
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.invalidate_spatial_index()
+
+    for _ in range(7):
+        world.step_world()
+
+    assert creature.last_action in (ActionType.TURN_LEFT, ActionType.TURN_RIGHT)
+    assert creature.facing in (Facing.N, Facing.S)
+    assert (creature.x, creature.y) == (9, 5)
+    assert creature.straight_move_streak == 0
 
 def test_build_next_epoch_world_carries_best_creatures():
     params = Parameters(

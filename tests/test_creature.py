@@ -21,6 +21,7 @@ def test_creature_to_dict_roundtrip():
     c.food_eaten = 3
     c.toxic_ticks = 2
     c.move_energy_spent = 4.5
+    c.straight_move_streak = 6
     c.visited_positions = [(5, 5), (6, 5), (6, 6)]
     d = c.to_dict()
     c2 = Creature.from_dict(d)
@@ -34,6 +35,7 @@ def test_creature_to_dict_roundtrip():
     assert c2.food_eaten == 3
     assert c2.toxic_ticks == 2
     assert c2.move_energy_spent == pytest.approx(4.5)
+    assert c2.straight_move_streak == 6
     assert c2.visited_positions == [(5, 5), (6, 5), (6, 6)]
 
 def test_creature_age_increments(world):
