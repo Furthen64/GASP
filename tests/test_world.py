@@ -367,3 +367,48 @@ def test_initial_food_spawns_away_from_initial_creatures():
     for fx, fy in world.food_cells:
         nearest = min(abs(fx - cx) + abs(fy - cy) for cx, cy in creature_cells)
         assert nearest >= params.initial_food_min_distance_from_creatures
+
+
+def test_initial_food_spawns_in_center_region():
+    params = Parameters(
+        world_width=20,
+        world_height=20,
+        initial_creature_count=4,
+        max_creatures=4,
+        initial_food_count=25,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        seed=9,
+        seed_mode=SEED_MODE_FIXED,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    assert world.food_cells
+    for x, y in world.food_cells:
+        assert 5 <= x < 15
+        assert 5 <= y < 15
+
+
+def test_dynamic_food_spawns_in_center_region():
+    params = Parameters(
+        world_width=20,
+        world_height=20,
+        initial_creature_count=0,
+        max_creatures=0,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        seed=11,
+        seed_mode=SEED_MODE_FIXED,
+    )
+    world = World(params)
+    world.initialize_default()
+    world.add_food(30)
+
+    assert world.food_cells
+    for x, y in world.food_cells:
+        assert 5 <= x < 15
+        assert 5 <= y < 15

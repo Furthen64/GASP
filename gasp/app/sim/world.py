@@ -193,6 +193,9 @@ class World:
                 cell for cell in free_cells
                 if self._distance_to_nearest(cell, avoid_cells) >= min_distance
             ]
+        center_cells = self._center_region_cells(free_cells)
+        if center_cells:
+            free_cells = center_cells
         self.rng.shuffle(free_cells)
         placed = 0
         for cell in free_cells:
@@ -200,6 +203,19 @@ class World:
                 break
             self.food_cells.add(cell)
             placed += 1
+
+    def _center_region_cells(self, cells):
+        """Prefer food spawns inside the middle area of the map."""
+        if not cells:
+            return []
+        x_min = self.width // 4
+        x_max = self.width - x_min
+        y_min = self.height // 4
+        y_max = self.height - y_min
+        return [
+            (x, y) for (x, y) in cells
+            if x_min <= x < x_max and y_min <= y < y_max
+        ]
 
     def _distance_to_nearest(self, cell, others):
         if not others:
