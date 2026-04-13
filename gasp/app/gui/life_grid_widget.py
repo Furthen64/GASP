@@ -21,7 +21,7 @@ class LifeGridWidget(QWidget):
         self.world = world
         self.selected_cell = None
         self.paint_timings = RollingTimingWindow()
-        self.setMinimumSize(400, 300)
+        self.setMinimumSize(640, 480)
 
     def paintEvent(self, event):
         total_start = perf_counter()
