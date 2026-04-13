@@ -27,6 +27,7 @@ class Parameters:
     seed_mode: str = SEED_MODE_RANDOM
     initial_food_count: int = 102
     initial_toxic_count: int = 10
+    initial_food_min_distance_from_creatures: int = 3
     genome_min_units: int = 4
     genome_max_units: int = 20
     initial_energy: float = 100.0
