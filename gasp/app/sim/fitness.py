@@ -9,10 +9,11 @@ def update_fitness(creature):
 def compute_fitness_breakdown(creature, params) -> dict:
     initial_energy = max(1.0, float(params.initial_energy))
     energy_ratio = max(0.0, creature.energy) / initial_energy
+    unique_positions = len({tuple(pos) for pos in creature.visited_positions})
     breakdown = {
         'reproduction': params.epoch_fitness_reproduction_weight * creature.pregnancies_completed,
         'survival': params.epoch_fitness_survival_weight * log1p(max(0, creature.lifetime_ticks)),
-        'exploration': params.epoch_fitness_exploration_weight * sqrt(max(0.0, creature.distance_traveled)),
+        'exploration': params.epoch_fitness_exploration_weight * sqrt(max(0, unique_positions - 1)),
         'efficiency': params.epoch_fitness_efficiency_weight * energy_ratio,
         'food': params.epoch_fitness_food_weight * creature.food_eaten,
         'toxic_penalty': params.epoch_fitness_toxic_penalty * creature.toxic_ticks,

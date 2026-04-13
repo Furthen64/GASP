@@ -51,6 +51,7 @@ def test_save_load_gamestate():
     assert loaded.food_eaten == original.food_eaten
     assert loaded.toxic_ticks == original.toxic_ticks
     assert loaded.move_energy_spent == original.move_energy_spent
+    assert loaded.visited_positions == original.visited_positions
 
 def test_rng_state_preserved():
     CREATURE_ID_GEN.reset(0)
@@ -97,6 +98,7 @@ def test_epoch_metadata_preserved_through_save_load():
             'total': 88.5,
         },
         'best_distance': 13.0,
+        'best_unique_positions': 9,
         'best_food_eaten': 5,
         'best_pregnancies': 3,
         'elite_ids': [9, 10, 11, 12],

@@ -97,6 +97,7 @@ class World:
             energy=self.params.initial_energy,
             chromosome=copy.deepcopy(template.chromosome),
             debug_color=template.debug_color,
+            visited_positions=[(x, y)],
         )
 
     def living_creature_count(self):
@@ -112,6 +113,7 @@ class World:
                 item[1],
                 item[0].pregnancies_completed,
                 item[0].food_eaten,
+                len({tuple(pos) for pos in item[0].visited_positions}),
                 item[0].distance_traveled,
                 item[0].age,
             ),
@@ -142,6 +144,7 @@ class World:
             'best_distance': best_creature.distance_traveled if best_creature else 0.0,
             'best_food_eaten': best_creature.food_eaten if best_creature else 0,
             'best_pregnancies': best_creature.pregnancies_completed if best_creature else 0,
+            'best_unique_positions': len({tuple(pos) for pos in best_creature.visited_positions}) if best_creature else 0,
             'best_generation': best_creature.generation if best_creature else 0,
             'elite_ids': [creature.id for creature in elites],
         }
@@ -417,6 +420,9 @@ class World:
             success = execute_action(action, creature, self)
             creature.last_action = action
             creature.log_action(self.step, action.name, success)
+            current_position = (creature.x, creature.y)
+            if current_position not in creature.visited_positions:
+                creature.visited_positions.append(current_position)
             action_ms += (perf_counter() - phase_start) * 1000.0
 
             # f. update energy, fitness

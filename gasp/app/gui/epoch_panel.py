@@ -44,7 +44,7 @@ class EpochPanel(QWidget):
         last_group = QGroupBox("Last Extinction")
         last_form = QFormLayout(last_group)
         self._last_labels = {}
-        for field in ['Epoch', 'Seed', 'Steps Survived', 'Best Creature', 'Best Fitness', 'Best Distance', 'Best Food', 'Best Pregnancies', 'Fitness Breakdown', 'Elite Count']:
+        for field in ['Epoch', 'Seed', 'Steps Survived', 'Best Creature', 'Best Fitness', 'Best Distance', 'Best Unique Positions', 'Best Food', 'Best Pregnancies', 'Fitness Breakdown', 'Elite Count']:
             label = QLabel('-')
             label.setWordWrap(True)
             last_form.addRow(f"{field}:", label)
@@ -94,6 +94,7 @@ class EpochPanel(QWidget):
         self._last_labels['Best Fitness'].setText('-' if best_fitness is None else f"{best_fitness:.2f}")
         best_distance = summary.get('best_distance')
         self._last_labels['Best Distance'].setText('-' if best_distance is None else f"{best_distance:.2f}")
+        self._last_labels['Best Unique Positions'].setText(str(summary.get('best_unique_positions', '-')))
         self._last_labels['Best Food'].setText(str(summary.get('best_food_eaten', '-')))
         self._last_labels['Best Pregnancies'].setText(str(summary.get('best_pregnancies', '-')))
         breakdown = summary.get('best_fitness_breakdown') or {}

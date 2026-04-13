@@ -119,6 +119,8 @@ def test_default_parameters_favor_small_randomized_runs():
     assert params.energy_per_food == 50.0
     assert params.move_energy_area_scale == 0.35
     assert params.epoch_fitness_reproduction_weight == 8.0
+    assert params.epoch_fitness_survival_weight == 0.35
+    assert params.epoch_fitness_exploration_weight == 2.5
 
 def test_move_energy_cost_scales_with_area():
     params = Parameters(
@@ -158,6 +160,7 @@ def test_epoch_fitness_rewards_mixed_outcomes():
         distance_traveled=36.0,
         energy=80.0,
         move_energy_spent=4.0,
+        visited_positions=[(1, 1), (2, 1), (3, 1), (4, 1), (4, 2), (5, 2), (6, 2)],
     )
     reproducer = Creature(
         id=2,
@@ -167,6 +170,7 @@ def test_epoch_fitness_rewards_mixed_outcomes():
         pregnancies_completed=2,
         food_eaten=2,
         move_energy_spent=1.5,
+        visited_positions=[(1, 1), (2, 1), (2, 2)],
     )
     poisoned = Creature(
         id=3,
@@ -175,10 +179,29 @@ def test_epoch_fitness_rewards_mixed_outcomes():
         energy=35.0,
         toxic_ticks=6,
         move_energy_spent=8.0,
+        visited_positions=[(1, 1), (2, 1), (3, 1), (2, 1), (3, 1)],
     )
 
     assert compute_fitness(reproducer, params) > compute_fitness(explorer, params)
     assert compute_fitness(explorer, params) > compute_fitness(poisoned, params)
+
+def test_epoch_fitness_prefers_exploration_over_turning_in_place():
+    params = Parameters(initial_energy=100.0)
+    turning = Creature(
+        id=1,
+        lifetime_ticks=40,
+        energy=82.0,
+        visited_positions=[(2, 2)],
+    )
+    explorer = Creature(
+        id=2,
+        lifetime_ticks=26,
+        energy=58.0,
+        move_energy_spent=5.5,
+        visited_positions=[(2, 2), (3, 2), (4, 2), (5, 2), (5, 3), (6, 3), (6, 4), (7, 4)],
+    )
+
+    assert compute_fitness(explorer, params) > compute_fitness(turning, params)
 
 def test_build_next_epoch_world_carries_best_creatures():
     params = Parameters(
@@ -208,6 +231,7 @@ def test_build_next_epoch_world_carries_best_creatures():
         food_eaten=3,
         energy=60.0,
         move_energy_spent=2.0,
+        visited_positions=[(2, 2), (3, 2), (4, 2), (4, 3)],
         chromosome=[
             Unit(
                 promoter=Promoter(
@@ -232,6 +256,7 @@ def test_build_next_epoch_world_carries_best_creatures():
         energy=20.0,
         move_energy_spent=9.0,
         toxic_ticks=3,
+        visited_positions=[(3, 3)],
         chromosome=[
             Unit(
                 promoter=Promoter(
@@ -254,6 +279,7 @@ def test_build_next_epoch_world_carries_best_creatures():
     assert next_world.last_epoch_summary['best_creature_id'] == best.id
     assert next_world.last_epoch_summary['best_pregnancies'] == 2
     assert next_world.last_epoch_summary['best_food_eaten'] == 3
+    assert next_world.last_epoch_summary['best_unique_positions'] == 4
     assert next_world.last_epoch_summary['best_fitness_breakdown']['reproduction'] > 0.0
     assert next_world.last_epoch_summary['elite_ids'] == [best.id, runner_up.id]
     assert next_world.seed != world.seed

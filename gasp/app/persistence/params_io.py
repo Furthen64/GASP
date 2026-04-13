@@ -35,12 +35,12 @@ class Parameters:
     move_energy_base_cost: float = 0.0
     move_energy_area_scale: float = 0.35
     epoch_fitness_reproduction_weight: float = 8.0
-    epoch_fitness_survival_weight: float = 1.0
-    epoch_fitness_exploration_weight: float = 1.25
+    epoch_fitness_survival_weight: float = 0.35
+    epoch_fitness_exploration_weight: float = 2.5
     epoch_fitness_efficiency_weight: float = 2.5
     epoch_fitness_food_weight: float = 3.0
     epoch_fitness_toxic_penalty: float = 1.5
-    epoch_fitness_move_penalty: float = 0.75
+    epoch_fitness_move_penalty: float = 0.35
 
     def to_dict(self):
         return asdict(self)

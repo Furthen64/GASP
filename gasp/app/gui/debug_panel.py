@@ -31,7 +31,7 @@ class DebugPanel(QWidget):
         self._labels = {}
         for field in ['ID', 'Generation', 'Age', 'Position', 'Size', 'Facing',
                       'Energy', 'Pregnancies', 'Epoch Score', 'Distance', 'Food Eaten',
-                      'Toxic Ticks', 'Move Cost', 'Move Energy', 'Action']:
+                      'Unique Positions', 'Toxic Ticks', 'Move Cost', 'Move Energy', 'Action']:
             lbl = QLabel("-")
             info_form.addRow(f"{field}:", lbl)
             self._labels[field] = lbl
@@ -117,6 +117,7 @@ class DebugPanel(QWidget):
         self._labels['Epoch Score'].setText(f"{compute_fitness(creature, world.params):.2f} (estimate)")
         self._labels['Distance'].setText(f"{creature.distance_traveled:.2f}")
         self._labels['Food Eaten'].setText(str(creature.food_eaten))
+        self._labels['Unique Positions'].setText(str(len({tuple(pos) for pos in creature.visited_positions})))
         self._labels['Toxic Ticks'].setText(str(creature.toxic_ticks))
         self._labels['Move Cost'].setText(f"{move_energy_cost(creature, world.params):.2f}")
         self._labels['Move Energy'].setText(f"{creature.move_energy_spent:.2f}")
