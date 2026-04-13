@@ -302,7 +302,7 @@ class DebugPanel(QWidget):
         info_form = QFormLayout(info_group)
         self._labels = {}
         for field in ['ID', 'Generation', 'Age', 'Position', 'Size', 'Facing',
-                      'Energy', 'Pregnancies', 'Epoch Score', 'Last Reward', 'Reward Trace',
+                      'Energy', 'Pregnancies', 'Selection Score', 'Last Reward', 'Reward Trace',
                       'Rule Bias', 'Distance', 'Food Eaten',
                       'Unique Positions', 'Toxic Ticks', 'Move Cost', 'Move Energy', 'Action']:
             lbl = QLabel("-")
@@ -399,7 +399,7 @@ class DebugPanel(QWidget):
         self._labels['Facing'].setText(creature.facing.name)
         self._labels['Energy'].setText(f"{creature.energy:.1f}")
         self._labels['Pregnancies'].setText(str(creature.pregnancies_completed))
-        self._labels['Epoch Score'].setText(f"{compute_fitness(creature, world.params):.2f} (estimate)")
+        self._labels['Selection Score'].setText(f"{compute_fitness(creature, world.params):.2f}")
         self._labels['Last Reward'].setText(f"{creature.last_reward:+.2f}")
         self._labels['Reward Trace'].setText(f"{creature.reward_trace:+.2f}")
         self._labels['Rule Bias'].setText(self._rule_bias_text(creature))

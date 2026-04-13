@@ -20,6 +20,7 @@ def setup_save_dir():
 def test_save_load_params():
     params = Parameters(world_width=50, world_height=40, mutation_rate=0.1,
                         max_creatures=77, pregnancy_chance=0.35,
+                        epoch_elite_mutation_rate=0.25,
                         internal_state_count=6)
     path = os.path.join(SAVE_DIR, 'test_params.json')
     save_params(params, path)
@@ -29,6 +30,7 @@ def test_save_load_params():
     assert loaded.mutation_rate == params.mutation_rate
     assert loaded.max_creatures == params.max_creatures
     assert loaded.pregnancy_chance == params.pregnancy_chance
+    assert loaded.epoch_elite_mutation_rate == params.epoch_elite_mutation_rate
     assert loaded.internal_state_count == params.internal_state_count
 
 def test_save_load_gamestate():
@@ -100,8 +102,8 @@ def test_epoch_metadata_preserved_through_save_load():
         'steps': 44,
         'elite_count': 4,
         'best_creature_id': 9,
-        'best_fitness': 88.5,
-        'best_fitness_breakdown': {
+        'best_selection_score': 88.5,
+        'best_selection_breakdown': {
             'reproduction': 40.0,
             'survival': 10.0,
             'exploration': 8.0,
@@ -116,6 +118,7 @@ def test_epoch_metadata_preserved_through_save_load():
         'best_food_eaten': 5,
         'best_pregnancies': 3,
         'elite_ids': [9, 10, 11, 12],
+        'elite_mutation_rate': 0.2,
     }
     world.epoch_history = [world.last_epoch_summary]
 

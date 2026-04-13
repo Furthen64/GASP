@@ -54,10 +54,3 @@ def compute_fitness_breakdown(creature, params) -> dict:
 def compute_fitness(creature, params) -> float:
     """Compute epoch fitness score from accumulated creature outcomes."""
     return compute_fitness_breakdown(creature, params)['total']
-
-def projected_fitness(creature, params, n_steps=10) -> list:
-    """Project fitness if current epoch state stays unchanged."""
-    results = []
-    current = compute_fitness(creature, params)
-    results.extend([current] * n_steps)
-    return results

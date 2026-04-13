@@ -1,5 +1,4 @@
 from gasp.app.sim.constants import ActionType
-from gasp.app.sim.genetics import Unit, Promoter, DEFAULT_MODULES
 from gasp.app.sim.genome_codec import validate_unit, make_random_genome, make_behavior_program_snippet
 from gasp.app.util.ids import CREATURE_ID_GEN
 from gasp.app.util.math_helpers import neighbor_ring
@@ -48,47 +47,10 @@ def _mutated_gene_action(rng, locomotion_bias=True):
     return _weighted_choice(rng, locomotion_weights if locomotion_bias else default_weights)
 
 
-def _weighted_choice(rng, choices):
-    total = sum(weight for _value, weight in choices)
-    if total <= 0:
-        return choices[0][0]
-    roll = rng.random() * total
-    cumulative = 0.0
-    for value, weight in choices:
-        cumulative += weight
-        if roll <= cumulative:
-            return value
-    return choices[-1][0]
-
-
-def _mutated_gene_action(rng, locomotion_bias=True):
-    locomotion_weights = [
-        (ActionType.MOVE, 6.0),
-        (ActionType.TURN_LEFT, 4.5),
-        (ActionType.TURN_RIGHT, 4.5),
-        (ActionType.EAT, 3.2),
-        (ActionType.ANALYZE, 2.2),
-        (ActionType.IDLE, 0.35),
-        (ActionType.GROW_N, 0.2),
-        (ActionType.GROW_E, 0.2),
-        (ActionType.GROW_S, 0.2),
-        (ActionType.GROW_W, 0.2),
-        (ActionType.REPRODUCE, 0.15),
-    ]
-    default_weights = [
-        (ActionType.MOVE, 3.0),
-        (ActionType.TURN_LEFT, 2.5),
-        (ActionType.TURN_RIGHT, 2.5),
-        (ActionType.EAT, 2.0),
-        (ActionType.ANALYZE, 1.8),
-        (ActionType.IDLE, 0.4),
-        (ActionType.GROW_N, 0.5),
-        (ActionType.GROW_E, 0.5),
-        (ActionType.GROW_S, 0.5),
-        (ActionType.GROW_W, 0.5),
-        (ActionType.REPRODUCE, 0.3),
-    ]
-    return _weighted_choice(rng, locomotion_weights if locomotion_bias else default_weights)
+def _resolved_mutation_rate(params, mutation_rate_override=None):
+    if mutation_rate_override is None:
+        return max(0.0, float(params.mutation_rate))
+    return max(0.0, float(mutation_rate_override))
 
 def choose_child_position(parent, world):
     """Find a free adjacent cell for the child."""
@@ -114,12 +76,12 @@ def crossover(genome_a, genome_b, rng):
         child = list(genome_a) if genome_a else list(genome_b)
     return child
 
-def mutate(genome, rng, params):
+def mutate(genome, rng, params, mutation_rate_override=None):
     """Apply mutations: value replace, disable, duplicate, remove."""
     import copy
     from gasp.app.sim.constants import SignalId, CompareOp
-    from gasp.app.sim.genetics import Promoter, Unit
     state_count = params.clamped_internal_state_count()
+    mutation_rate = _resolved_mutation_rate(params, mutation_rate_override)
     genome = [copy.deepcopy(u) for u in genome]
     result = []
 
@@ -141,58 +103,49 @@ def mutate(genome, rng, params):
             ActionType.ANALYZE,
         }
 
-    def is_locomotion_rule(unit):
-        return unit.target_type == 'gene' and unit.gene in {
-            ActionType.MOVE,
-            ActionType.TURN_LEFT,
-            ActionType.TURN_RIGHT,
-            ActionType.EAT,
-            ActionType.ANALYZE,
-        }
-
     for unit in genome:
         r = rng.random()
-        if r < params.mutation_rate * 0.2:
+        if r < mutation_rate * 0.2:
             unit.gene = _mutated_gene_action(
                 rng,
                 locomotion_bias=is_locomotion_rule(unit) or unit.source_state is not None or unit.next_state is not None,
             )
         r2 = rng.random()
-        if r2 < params.mutation_rate:
+        if r2 < mutation_rate:
             # Mutate promoter threshold
             unit.promoter.threshold = max(0.0, unit.promoter.threshold + (rng.random() - 0.5) * 20.0)
         r3 = rng.random()
-        if r3 < params.mutation_rate:
+        if r3 < mutation_rate:
             # Mutate base_strength
             unit.promoter.base_strength = max(0.0, unit.promoter.base_strength + (rng.random() - 0.5))
         r4 = rng.random()
-        if r4 < params.mutation_rate * 0.5:
+        if r4 < mutation_rate * 0.5:
             # Change signal_id
             unit.promoter.signal_id = rng.choice(list(SignalId))
         r5 = rng.random()
-        if r5 < params.mutation_rate * 0.5:
+        if r5 < mutation_rate * 0.5:
             # Change compare_op
             unit.promoter.compare_op = rng.choice(list(CompareOp))
         r6 = rng.random()
-        if r6 < params.mutation_rate * 0.3 and unit.target_type == 'gene':
+        if r6 < mutation_rate * 0.3 and unit.target_type == 'gene':
             unit.gene = _mutated_gene_action(
                 rng,
                 locomotion_bias=is_locomotion_rule(unit) or unit.source_state is not None or unit.next_state is not None,
             )
         r7 = rng.random()
-        if r7 < params.mutation_rate * 0.4:
+        if r7 < mutation_rate * 0.4:
             unit.source_state = rng.randint(0, state_count - 1) if rng.random() < 0.7 else None
         r8 = rng.random()
-        if r8 < params.mutation_rate * 0.4:
+        if r8 < mutation_rate * 0.4:
             unit.next_state = rng.randint(0, state_count - 1) if rng.random() < 0.8 else None
         result.append(validate_unit(unit, state_count=state_count))
         # Duplicate
-        if rng.random() < params.mutation_rate * 0.1:
+        if rng.random() < mutation_rate * 0.1:
             import copy
             result.append(validate_unit(copy.deepcopy(unit), state_count=state_count))
-    if result and (len(result) < 3 or rng.random() < params.mutation_rate * 0.9):
+    if result and (len(result) < 3 or rng.random() < mutation_rate * 0.9):
         result = inject_behavior_snippet(result)
-    if result and rng.random() < params.mutation_rate * 0.5:
+    if result and rng.random() < mutation_rate * 0.5:
         stateful_units = [unit for unit in result if unit.source_state is not None or unit.next_state is not None]
         if stateful_units:
             anchor = rng.choice(stateful_units)

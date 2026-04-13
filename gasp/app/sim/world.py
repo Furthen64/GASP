@@ -5,10 +5,10 @@ from time import perf_counter
 from gasp.app.sim.constants import CellType, Facing, ActionType, SignalId, CompareOp
 from gasp.app.sim.creature import Creature, make_creature
 from gasp.app.sim.genetics import DEFAULT_MODULES
+from gasp.app.sim.reproduction import crossover, mutate
 from gasp.app.sim.sensing import compute_sensed
 from gasp.app.sim.actions import execute_action
 from gasp.app.sim.fitness import update_fitness, compute_fitness, compute_fitness_breakdown
-from gasp.app.sim.history import WorldHistory
 from gasp.app.util.perf import RollingTimingWindow, TimingSnapshot
 from gasp.app.util.rng import RNG
 from gasp.app.util.math_helpers import rect_cells
@@ -31,7 +31,6 @@ class World:
         self.seed = int(seed)
         self.rng = RNG(seed)
         self.pending_births = []
-        self.history = WorldHistory()
         self.step_timings = RollingTimingWindow()
         self.last_step_profile = TimingSnapshot(total_ms=0.0)
         self.epoch = 1
@@ -42,15 +41,9 @@ class World:
         self._creature_at_cache = {}
         self._creature_count_at_index = -1
 
-    def initialize_default(self, seed_creatures=None):
+    def initialize_default(self, seed_creatures=None, seed_mutation_rate=None):
         """Add border walls, initial food/toxic, and seed creatures."""
-        # Border walls
-        for x in range(self.width):
-            self.terrain[(x, 0)] = CellType.BORDER
-            self.terrain[(x, self.height - 1)] = CellType.BORDER
-        for y in range(self.height):
-            self.terrain[(0, y)] = CellType.BORDER
-            self.terrain[(self.width - 1, y)] = CellType.BORDER
+        self._initialize_border_walls()
 
         # Seed creatures
         initial_creatures = min(self.params.initial_creature_count, self.params.max_creatures)
@@ -58,14 +51,24 @@ class World:
         spawn_cells = self._choose_initial_spawn_cells(initial_creatures)
         for index, (tx, ty) in enumerate(spawn_cells):
             if index < len(templates):
-                creature = self._spawn_epoch_creature(templates[index], tx, ty)
+                creature = self._spawn_epoch_creature(templates[index], tx, ty, mutation_rate=seed_mutation_rate)
             else:
                 creature = make_creature(self.rng, self.params, birth_step=0, x=tx, y=ty)
             self.creatures[creature.id] = creature
             self.invalidate_spatial_index()
         self.invalidate_spatial_index()
 
-        # Initial food and toxic
+        self._spawn_initial_resources()
+
+    def _initialize_border_walls(self):
+        for x in range(self.width):
+            self.terrain[(x, 0)] = CellType.BORDER
+            self.terrain[(x, self.height - 1)] = CellType.BORDER
+        for y in range(self.height):
+            self.terrain[(0, y)] = CellType.BORDER
+            self.terrain[(self.width - 1, y)] = CellType.BORDER
+
+    def _spawn_initial_resources(self):
         initial_spawn_cells = {(creature.x, creature.y) for creature in self.creatures.values() if creature.alive}
         min_food_distance = max(0, int(getattr(self.params, 'initial_food_min_distance_from_creatures', 0)))
         self.add_food(
@@ -75,8 +78,14 @@ class World:
         )
         self.add_toxic(self.params.initial_toxic_count)
 
-    def _spawn_epoch_creature(self, template, x, y):
+    def _spawn_epoch_creature(self, template, x, y, mutation_rate=None):
         from gasp.app.util.ids import CREATURE_ID_GEN
+
+        chromosome = (
+            mutate(template.chromosome, self.rng, self.params, mutation_rate_override=mutation_rate)
+            if mutation_rate is not None and mutation_rate > 0.0
+            else copy.deepcopy(template.chromosome)
+        )
 
         return Creature(
             id=CREATURE_ID_GEN.next_id(),
@@ -89,7 +98,7 @@ class World:
             height=1,
             facing=Facing.N,
             energy=self.params.initial_energy,
-            chromosome=copy.deepcopy(template.chromosome),
+            chromosome=chromosome,
             debug_color=template.debug_color,
             states_seen=[0],
             visited_positions=[(x, y)],
@@ -156,9 +165,7 @@ class World:
 
     def build_next_epoch_world(self):
         ranked = self.ranked_creatures()
-        requested_elites = self.params.initial_creature_count or 1
-        elite_count = min(requested_elites, len(ranked))
-        elites = [creature for creature, _fitness in ranked[:elite_count]]
+        parent_pool = [creature for creature, _fitness in ranked[:2]]
         best_creature, best_fitness = ranked[0] if ranked else (None, 0.0)
         next_seed = self.params.generate_seed() if hasattr(self.params, 'generate_seed') else self.seed + 1
         self.params.seed = int(next_seed)
@@ -170,20 +177,106 @@ class World:
             'seed': self.seed,
             'steps': self.step,
             'population': len(self.creatures),
-            'elite_count': len(elites),
+            'elite_count': len(parent_pool),
             'best_creature_id': best_creature.id if best_creature else None,
-            'best_fitness': best_fitness,
-            'best_fitness_breakdown': compute_fitness_breakdown(best_creature, self.params) if best_creature else None,
+            'best_selection_score': best_fitness,
+            'best_selection_breakdown': compute_fitness_breakdown(best_creature, self.params) if best_creature else None,
             'best_distance': best_creature.distance_traveled if best_creature else 0.0,
             'best_food_eaten': best_creature.food_eaten if best_creature else 0,
             'best_pregnancies': best_creature.pregnancies_completed if best_creature else 0,
             'best_unique_positions': len({tuple(pos) for pos in best_creature.visited_positions}) if best_creature else 0,
             'best_generation': best_creature.generation if best_creature else 0,
-            'elite_ids': [creature.id for creature in elites],
+            'elite_ids': [creature.id for creature in parent_pool],
+            'elite_mutation_rate': self.params.epoch_elite_mutation_rate,
         }
         next_world.epoch_history.append(next_world.last_epoch_summary)
-        next_world.initialize_default(seed_creatures=elites)
+        if not best_creature:
+            next_world.initialize_default()
+            return next_world
+
+        next_world._initialize_border_walls()
+        next_population = next_world._build_next_epoch_population(parent_pool)
+        spawn_cells = next_world._choose_initial_spawn_cells(len(next_population))
+        for creature, (tx, ty) in zip(next_population, spawn_cells):
+            creature.x = tx
+            creature.y = ty
+            creature.visited_positions = [(tx, ty)]
+            next_world.creatures[creature.id] = creature
+        next_world.invalidate_spatial_index()
+        next_world._spawn_initial_resources()
         return next_world
+
+    def _make_epoch_creature(self, chromosome, parent_ids, generation, debug_color):
+        from gasp.app.util.ids import CREATURE_ID_GEN
+
+        return Creature(
+            id=CREATURE_ID_GEN.next_id(),
+            parent_ids=list(parent_ids),
+            generation=generation,
+            birth_step=0,
+            x=0,
+            y=0,
+            width=1,
+            height=1,
+            facing=Facing.N,
+            energy=self.params.initial_energy,
+            chromosome=copy.deepcopy(chromosome),
+            debug_color=debug_color,
+            states_seen=[0],
+            visited_positions=[(0, 0)],
+        )
+
+    def _build_next_epoch_population(self, parent_pool):
+        population_size = min(self.params.initial_creature_count, self.params.max_creatures)
+        if population_size <= 0 or not parent_pool:
+            return []
+
+        best = parent_pool[0]
+        second = parent_pool[1] if len(parent_pool) > 1 else None
+        mutation_rate = self.params.epoch_elite_mutation_rate
+        next_population = [
+            self._make_epoch_creature(
+                best.chromosome,
+                [best.id],
+                best.generation + 1,
+                best.debug_color,
+            )
+        ]
+
+        if second and len(next_population) < population_size:
+            crossover_one = crossover(best.chromosome, second.chromosome, self.rng)
+            next_population.append(
+                self._make_epoch_creature(
+                    crossover_one,
+                    [best.id, second.id],
+                    max(best.generation, second.generation) + 1,
+                    best.debug_color,
+                )
+            )
+
+        if second and len(next_population) < population_size:
+            crossover_two = crossover(second.chromosome, best.chromosome, self.rng)
+            next_population.append(
+                self._make_epoch_creature(
+                    crossover_two,
+                    [best.id, second.id],
+                    max(best.generation, second.generation) + 1,
+                    second.debug_color,
+                )
+            )
+
+        while len(next_population) < population_size:
+            mutated = mutate(best.chromosome, self.rng, self.params, mutation_rate_override=mutation_rate)
+            next_population.append(
+                self._make_epoch_creature(
+                    mutated,
+                    [best.id],
+                    best.generation + 1,
+                    best.debug_color,
+                )
+            )
+
+        return next_population
 
     def creature_capacity_remaining(self):
         return max(0, self.params.max_creatures - self.living_creature_count())
@@ -409,22 +502,63 @@ class World:
         self._ensure_runtime_learning_state(creature)
         return unit.promoter.base_strength + creature.learned_biases[unit_index]
 
+    def _recent_reward_stagnation(self, creature) -> tuple[bool, list[float], list[dict]]:
+        window = max(1, int(getattr(self.params, 'runtime_stagnation_window', 5)))
+        threshold = float(getattr(self.params, 'runtime_stagnation_reward_threshold', 0.0))
+        if len(creature.reward_history) < window:
+            return False, [], []
+        recent_rewards = creature.reward_history[-window:]
+        if any(reward > threshold for reward in recent_rewards):
+            return False, recent_rewards, []
+        recent_actions = creature.action_log[-window:]
+        return True, recent_rewards, recent_actions
+
+    def _stagnation_action_adjustment(self, creature, action: ActionType) -> float:
+        is_stagnating, _recent_rewards, recent_actions = self._recent_reward_stagnation(creature)
+        if not is_stagnating:
+            return 0.0
+
+        nudge = max(0.0, float(getattr(self.params, 'runtime_stagnation_nudge', 0.0)))
+        if nudge <= 0.0:
+            return 0.0
+
+        recent_action_names = [entry.get('action') for entry in recent_actions]
+        repeat_count = recent_action_names.count(action.name)
+        window = max(1, len(recent_action_names))
+        novelty_bonus = nudge * ((window - repeat_count) / window)
+        repeat_penalty = nudge if creature.last_action == action else 0.0
+        idle_penalty = nudge * 0.5 if action == ActionType.IDLE else 0.0
+        return novelty_bonus - repeat_penalty - idle_penalty
+
     def _select_stateful_rule(self, creature) -> tuple[ActionType, int | None, int | None]:
         matching_units = self._matching_units(creature, include_stateful=True)
         if not matching_units:
             return ActionType.IDLE, None, None
 
-        matching_units.sort(
-            key=lambda item: self._unit_runtime_strength(creature, item[0], item[1]),
-            reverse=True,
-        )
+        ranked_candidates = []
         for unit_index, unit in matching_units:
-            if unit.target_type == 'gene' and unit.gene is not None and self._is_action_feasible(creature, unit.gene):
-                return unit.gene, unit.next_state, unit_index
-            if unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
-                for action in DEFAULT_MODULES[unit.module_id]:
-                    if self._is_action_feasible(creature, action):
-                        return action, unit.next_state, unit_index
+            base_score = self._unit_runtime_strength(creature, unit_index, unit)
+            if unit.target_type == 'gene' and unit.gene is not None:
+                ranked_candidates.append((
+                    unit.gene,
+                    unit.next_state,
+                    unit_index,
+                    base_score + self._stagnation_action_adjustment(creature, unit.gene),
+                ))
+            elif unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
+                module_actions = DEFAULT_MODULES[unit.module_id]
+                for action in module_actions:
+                    ranked_candidates.append((
+                        action,
+                        unit.next_state,
+                        unit_index,
+                        base_score + self._stagnation_action_adjustment(creature, action),
+                    ))
+
+        ranked_candidates.sort(key=lambda item: item[3], reverse=True)
+        for action, next_state, unit_index, _score in ranked_candidates:
+            if self._is_action_feasible(creature, action):
+                return action, next_state, unit_index
         return ActionType.IDLE, None, None
 
     def _score_legacy_actions(self, creature) -> dict[ActionType, tuple[float, int | None]]:
@@ -443,6 +577,11 @@ class World:
                     current_score, current_unit_index = action_scores.get(at, (0.0, None))
                     next_unit_index = unit_index if current_unit_index is None or per_action >= current_score else current_unit_index
                     action_scores[at] = (current_score + per_action, next_unit_index)
+        if action_scores:
+            action_scores = {
+                action: (score + self._stagnation_action_adjustment(creature, action), unit_index)
+                for action, (score, unit_index) in action_scores.items()
+            }
         return action_scores
 
     def _creature_has_stateful_rules(self, creature) -> bool:
@@ -680,10 +819,6 @@ class World:
                 toxic_hit,
             )
             self._apply_runtime_learning(creature, selected_unit_index, reward)
-            fitness_estimate = compute_fitness(creature, self.params)
-            creature.fitness_history.append(fitness_estimate)
-            if len(creature.fitness_history) > 200:
-                creature.fitness_history.pop(0)
             toxic_ms += (perf_counter() - phase_start) * 1000.0
 
             # g. check death
@@ -733,11 +868,7 @@ class World:
                 self.invalidate_spatial_index()
         phase_ms['births'] = (perf_counter() - phase_start) * 1000.0
 
-        # 6. Update history
-        phase_start = perf_counter()
         living = self.living_creature_count()
-        self.history.record(self.step, living)
-        phase_ms['history'] = (perf_counter() - phase_start) * 1000.0
 
         total_ms = (perf_counter() - total_start) * 1000.0
         self.last_step_profile = TimingSnapshot(
@@ -767,7 +898,6 @@ class World:
             'creatures': {str(k): v.to_dict() for k, v in self.creatures.items()},
             'rng_state': list(self.rng.get_state()),
             'params': self.params.to_dict(),
-            'history': self.history.to_dict(),
             'pending_births': self.pending_births,
             'last_epoch_summary': self.last_epoch_summary,
             'epoch_history': self.epoch_history,
@@ -805,8 +935,18 @@ class World:
                 world.rng.set_state(state)
             except Exception:
                 pass
-        world.history = WorldHistory.from_dict(d.get('history', {}))
         world.pending_births = d.get('pending_births', [])
-        world.last_epoch_summary = d.get('last_epoch_summary')
-        world.epoch_history = d.get('epoch_history', [])
+        summary = d.get('last_epoch_summary')
+        if summary and 'best_selection_score' not in summary and 'best_fitness' in summary:
+            summary['best_selection_score'] = summary.get('best_fitness')
+        if summary and 'best_selection_breakdown' not in summary and 'best_fitness_breakdown' in summary:
+            summary['best_selection_breakdown'] = summary.get('best_fitness_breakdown')
+        world.last_epoch_summary = summary
+        history = d.get('epoch_history', [])
+        for item in history:
+            if 'best_selection_score' not in item and 'best_fitness' in item:
+                item['best_selection_score'] = item.get('best_fitness')
+            if 'best_selection_breakdown' not in item and 'best_fitness_breakdown' in item:
+                item['best_selection_breakdown'] = item.get('best_fitness_breakdown')
+        world.epoch_history = history
         return world

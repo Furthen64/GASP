@@ -68,16 +68,16 @@ def test_step_records_timing_profile(default_world):
     assert 'creature_action' in w.last_step_profile.phase_ms
     assert w.step_timings.latest is w.last_step_profile
 
-def test_step_records_epoch_score_history(default_world):
+def test_step_records_runtime_reward_history(default_world):
     w = default_world
     creature = next(iter(w.creatures.values()))
 
-    assert creature.fitness_history == []
+    assert creature.reward_history == []
 
     w.step_world()
 
-    assert len(creature.fitness_history) == 1
-    assert isinstance(creature.fitness_history[0], float)
+    assert len(creature.reward_history) == 1
+    assert isinstance(creature.reward_history[0], float)
 
 def test_initial_creatures_respect_max_creatures():
     from gasp.app.persistence.params_io import Parameters
@@ -121,6 +121,7 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.internal_state_count == 4
     assert params.energy_per_food == 50.0
     assert params.move_energy_area_scale == 0.35
+    assert params.epoch_elite_mutation_rate == 0.1
     assert params.epoch_fitness_reproduction_weight == 8.0
     assert params.epoch_fitness_survival_weight == 0.0
     assert params.epoch_fitness_exploration_weight == 1.0
@@ -134,6 +135,9 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.runtime_reward_food == 5.0
     assert params.runtime_penalty_failed_action == 1.4
     assert params.runtime_penalty_blocked_idle == 1.2
+    assert params.runtime_stagnation_window == 5
+    assert params.runtime_stagnation_reward_threshold == 0.0
+    assert params.runtime_stagnation_nudge == 1.5
 
 def test_move_energy_cost_scales_with_area():
     params = Parameters(
@@ -210,7 +214,6 @@ def test_moving_over_food_grants_immediate_epoch_fitness():
 
     before = compute_fitness(mover, params)
     before_breakdown = compute_fitness_breakdown(mover, params)
-    assert mover.fitness_history == []
 
     world.step_world()
 
@@ -224,9 +227,113 @@ def test_moving_over_food_grants_immediate_epoch_fitness():
         before_breakdown['food'] + params.epoch_fitness_food_weight
     )
     assert after >= before + params.epoch_fitness_food_weight
-    assert mover.fitness_history[-1] == pytest.approx(after)
     assert mover.last_reward > 0.0
     assert mover.learned_biases[0] > 0.0
+
+def test_next_epoch_builds_clone_crossover_and_mutated_children():
+    from gasp.app.util.ids import CREATURE_ID_GEN
+
+    CREATURE_ID_GEN.reset(0)
+    params = Parameters(
+        initial_creature_count=5,
+        epoch_elite_mutation_rate=1.0,
+        max_creatures=5,
+        seed=11,
+        seed_mode=SEED_MODE_FIXED,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        initial_food_count=0,
+        initial_toxic_count=0,
+    )
+    world = World(params)
+    world.initialize_default(seed_creatures=[])
+    world.creatures = {}
+
+    best = Creature(
+        id=10,
+        generation=2,
+        x=2,
+        y=2,
+        food_eaten=3,
+        energy=80.0,
+        visited_positions=[(2, 2), (3, 2), (4, 2)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=2.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            )
+        ],
+    )
+    runner_up = Creature(
+        id=11,
+        generation=1,
+        x=3,
+        y=3,
+        food_eaten=2,
+        energy=60.0,
+        visited_positions=[(3, 3), (4, 3)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_RIGHT,
+            )
+        ],
+    )
+    world.creatures = {best.id: best, runner_up.id: runner_up}
+
+    next_world = world.build_next_epoch_world()
+
+    children = list(next_world.creatures.values())
+    assert len(children) == 5
+    assert next_world.last_epoch_summary['elite_count'] == 2
+
+    clones = [creature for creature in children if creature.parent_ids == [best.id] and creature.chromosome == best.chromosome]
+    crossovers = [creature for creature in children if creature.parent_ids == [best.id, runner_up.id]]
+    mutated_best = [creature for creature in children if creature.parent_ids == [best.id] and creature.chromosome != best.chromosome]
+
+    assert len(clones) == 1
+    assert len(crossovers) == 2
+    assert len(mutated_best) == 2
+
+
+def test_next_epoch_uses_mutated_best_children_when_only_one_parent_exists():
+    from gasp.app.util.ids import CREATURE_ID_GEN
+
+    CREATURE_ID_GEN.reset(0)
+    params = Parameters(
+        initial_creature_count=4,
+        epoch_elite_mutation_rate=1.0,
+        max_creatures=4,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        initial_food_count=0,
+        initial_toxic_count=0,
+    )
+    world = World(params, seed=7)
+    world.initialize_default()
+    original = next(iter(world.creatures.values()))
+    original.food_eaten = 3
+    world.creatures = {original.id: original}
+
+    next_world = world.build_next_epoch_world()
+    children = list(next_world.creatures.values())
+
+    assert next_world.last_epoch_summary['elite_mutation_rate'] == pytest.approx(1.0)
+    assert len(children) == 4
+    assert len([creature for creature in children if creature.parent_ids == [original.id] and creature.chromosome == original.chromosome]) == 1
+    assert len([creature for creature in children if creature.parent_ids == [original.id] and creature.chromosome != original.chromosome]) == 3
 
 def test_runtime_learning_penalizes_idle_rule_and_switches_action():
     params = Parameters(
@@ -351,6 +458,69 @@ def test_runtime_learning_rewards_food_without_erasing_it_on_next_bad_tick():
     assert creature.learned_biases[0] < positive_bias
     assert creature.reward_trace < positive_trace
     assert creature.reward_trace > 0.0
+
+def test_stagnation_nudge_pushes_creature_to_try_different_action():
+    params = Parameters(
+        world_width=5,
+        world_height=5,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        runtime_stagnation_window=5,
+        runtime_stagnation_reward_threshold=0.0,
+        runtime_stagnation_nudge=1.5,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=2,
+        y=2,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(2, 2)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.2,
+                ),
+                target_type='gene',
+                gene=ActionType.IDLE,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_LEFT,
+            ),
+        ],
+        reward_history=[-0.5, -0.2, 0.0, -0.1, -0.3],
+        action_log=[
+            {'step': 1, 'action': 'IDLE', 'success': True},
+            {'step': 2, 'action': 'IDLE', 'success': True},
+            {'step': 3, 'action': 'IDLE', 'success': True},
+            {'step': 4, 'action': 'IDLE', 'success': True},
+            {'step': 5, 'action': 'IDLE', 'success': True},
+        ],
+        last_action=ActionType.IDLE,
+    )
+    world.creatures = {creature.id: creature}
+
+    action, _next_state, selected_unit_index = world._evaluate_genome(creature)
+
+    assert action == ActionType.TURN_LEFT
+    assert selected_unit_index == 1
 
 def test_epoch_fitness_rewards_mixed_outcomes():
     params = Parameters(initial_energy=100.0)
@@ -766,6 +936,7 @@ def test_build_next_epoch_world_carries_best_creatures():
         world_width=8,
         world_height=8,
         initial_creature_count=2,
+        epoch_elite_mutation_rate=0.0,
         max_creatures=2,
         initial_food_count=0,
         initial_toxic_count=0,
@@ -838,15 +1009,17 @@ def test_build_next_epoch_world_carries_best_creatures():
     assert next_world.last_epoch_summary['best_pregnancies'] == 2
     assert next_world.last_epoch_summary['best_food_eaten'] == 3
     assert next_world.last_epoch_summary['best_unique_positions'] == 4
-    assert next_world.last_epoch_summary['best_fitness_breakdown']['reproduction'] > 0.0
+    assert next_world.last_epoch_summary['best_selection_breakdown']['reproduction'] > 0.0
     assert next_world.last_epoch_summary['elite_ids'] == [best.id, runner_up.id]
     assert next_world.seed != world.seed
     assert next_world.living_creature_count() == 2
 
-    offspring = sorted(next_world.creatures.values(), key=lambda creature: creature.parent_ids[0])
-    assert [creature.parent_ids[0] for creature in offspring] == [best.id, runner_up.id]
-    assert offspring[0].generation == best.generation + 1
-    assert offspring[0].chromosome[0].gene == best.chromosome[0].gene
+    clone_child = next(creature for creature in next_world.creatures.values() if creature.parent_ids == [best.id])
+    crossover_child = next(creature for creature in next_world.creatures.values() if creature.parent_ids == [best.id, runner_up.id])
+
+    assert clone_child.generation == best.generation + 1
+    assert clone_child.chromosome[0].gene == best.chromosome[0].gene
+    assert crossover_child.generation == best.generation + 1
 
 def test_blocked_move_falls_back_to_feasible_action():
     params = Parameters(

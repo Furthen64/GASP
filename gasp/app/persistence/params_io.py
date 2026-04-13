@@ -10,18 +10,17 @@ MAX_SEED_VALUE = 2_147_483_647
 class Parameters:
     world_width: int = 70
     world_height: int = 64
-    tick_speed: float = 0.1
     initial_creature_count: int = 8
     max_creatures: int = 25
     pregnancy_chance: float = 0.2
     food_spawn_rate: float = 0.0001
     toxic_spawn_rate: float = 0.0
     mutation_rate: float = 0.1
+    epoch_elite_mutation_rate: float = 0.1
     crossover_rate: float = 0.7
     reproduction_cost: float = 30.0
     max_age: int = 500
     max_size: int = 4
-    fitness_lifetime_weight: float = 1.0
     fitness_distance_weight: float = 0.5
     seed: int = 42
     seed_mode: str = SEED_MODE_RANDOM
@@ -57,6 +56,9 @@ class Parameters:
     runtime_penalty_idle: float = 0.8
     runtime_penalty_blocked_idle: float = 1.2
     runtime_penalty_toxic: float = 2.5
+    runtime_stagnation_window: int = 5
+    runtime_stagnation_reward_threshold: float = 0.0
+    runtime_stagnation_nudge: float = 1.5
 
     def reproduction_energy_threshold(self) -> float:
         return self.initial_energy + self.reproduction_cost

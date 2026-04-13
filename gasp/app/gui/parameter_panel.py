@@ -42,9 +42,10 @@ class ParameterPanel(QWidget):
                       'max_age', 'max_size', 'seed', 'initial_food_count',
                       'initial_toxic_count', 'initial_food_min_distance_from_creatures',
                       'initial_creature_spawn_min_distance',
-                      'internal_state_count', 'genome_min_units', 'genome_max_units']
-        float_params = ['tick_speed', 'pregnancy_chance', 'food_spawn_rate', 'toxic_spawn_rate',
-                        'mutation_rate', 'crossover_rate', 'reproduction_cost',
+                      'internal_state_count', 'genome_min_units', 'genome_max_units',
+                      'runtime_stagnation_window']
+        float_params = ['pregnancy_chance', 'food_spawn_rate', 'toxic_spawn_rate',
+                        'mutation_rate', 'epoch_elite_mutation_rate', 'crossover_rate', 'reproduction_cost',
                         'initial_energy', 'energy_per_food', 'energy_per_tick',
                         'move_energy_base_cost', 'move_energy_area_scale',
                         'epoch_fitness_reproduction_weight', 'epoch_fitness_survival_weight',
@@ -57,7 +58,8 @@ class ParameterPanel(QWidget):
                         'runtime_reward_new_cell', 'runtime_reward_reproduce',
                         'runtime_penalty_failed_action', 'runtime_penalty_idle',
                         'runtime_penalty_blocked_idle',
-                        'runtime_penalty_toxic']
+                        'runtime_penalty_toxic', 'runtime_stagnation_reward_threshold',
+                        'runtime_stagnation_nudge']
 
         for name in int_params:
             val = getattr(self.params, name)
@@ -136,6 +138,14 @@ class ParameterPanel(QWidget):
 
     def sync_seed_value(self, seed: int):
         self._spinboxes['seed'].setValue(int(seed))
+
+    def sync_field_value(self, name: str, value):
+        spinbox = self._spinboxes.get(name)
+        if spinbox is None:
+            return
+        spinbox.blockSignals(True)
+        spinbox.setValue(value)
+        spinbox.blockSignals(False)
 
     def _sync_seed_mode(self):
         seed_mode = getattr(self.params, 'seed_mode', SEED_MODE_FIXED)

@@ -9,7 +9,7 @@ from gasp.app.sim.world import World
 from gasp.app.persistence.params_io import Parameters
 from gasp.app.gui.life_grid_widget import LifeGridWidget
 from gasp.app.gui.debug_panel import DebugPanel
-from gasp.app.gui.epoch_panel import EpochPanel
+from gasp.app.gui.transition_panel import TransitionPanel
 from gasp.app.gui.parameter_panel import ParameterPanel
 from gasp.app.gui.gamestate_panel import GamestatePanel
 from gasp.app.gui.legend_panel import LegendPanel
@@ -37,6 +37,13 @@ class MainWindow(QMainWindow):
         world.initialize_default()
         if hasattr(self, 'param_panel'):
             self.param_panel.sync_seed_value(seed)
+            self.param_panel.sync_field_value('epoch_elite_mutation_rate', self.params.epoch_elite_mutation_rate)
+        if hasattr(self, 'transition_panel'):
+            self.transition_panel.set_transition_settings(
+                self._epoch_lifespan_enabled,
+                self._epoch_lifespan_seconds,
+                self.params.epoch_elite_mutation_rate,
+            )
         return world
 
     def _setup_ui(self):
@@ -90,17 +97,22 @@ class MainWindow(QMainWindow):
         self.right_tabs = QTabWidget()
         self.debug_panel = DebugPanel()
         self.param_panel = ParameterPanel(self.params)
-        self.epoch_panel = EpochPanel()
-        self.epoch_panel.lifespan_enabled_changed.connect(self._on_epoch_lifespan_enabled_changed)
-        self.epoch_panel.lifespan_seconds_changed.connect(self._on_epoch_lifespan_seconds_changed)
-        self.epoch_panel.set_lifespan_settings(self._epoch_lifespan_enabled, self._epoch_lifespan_seconds)
+        self.transition_panel = TransitionPanel()
+        self.transition_panel.lifespan_enabled_changed.connect(self._on_epoch_lifespan_enabled_changed)
+        self.transition_panel.lifespan_seconds_changed.connect(self._on_epoch_lifespan_seconds_changed)
+        self.transition_panel.elite_mutation_rate_changed.connect(self._on_epoch_elite_mutation_rate_changed)
+        self.transition_panel.set_transition_settings(
+            self._epoch_lifespan_enabled,
+            self._epoch_lifespan_seconds,
+            self.params.epoch_elite_mutation_rate,
+        )
         self.param_panel.params_applied.connect(self._on_params_applied)
-        self.right_tabs.addTab(self.epoch_panel, "Epochs")
+        self.right_tabs.addTab(self.transition_panel, "Transitions")
         self.right_tabs.addTab(self.debug_panel, "Debug")
         self.right_tabs.addTab(self.param_panel, "Parameters")
         self.right_tabs.addTab(LegendPanel(), "Legend")
         splitter.addWidget(self.right_tabs)
-        splitter.setSizes([920, 280])
+        splitter.setSizes([800, 400])
 
         # Gamestate panel at bottom
         self.gamestate_panel = GamestatePanel()
@@ -146,7 +158,7 @@ class MainWindow(QMainWindow):
         if reason == 'lifespan':
             status = f"Epoch {self.world.epoch} started after lifespan limit in epoch {previous_world.epoch}"
         else:
-            status = f"Epoch {self.world.epoch} started from epoch {previous_world.epoch} elites"
+            status = f"Epoch {self.world.epoch} started from epoch {previous_world.epoch} transition plan"
         self.gamestate_panel.set_status(status)
         self.param_panel.sync_seed_value(self.world.seed)
 
@@ -200,6 +212,17 @@ class MainWindow(QMainWindow):
     def _on_params_applied(self, params):
         self.params = params
         self.world.params = params
+        self.transition_panel.set_transition_settings(
+            self._epoch_lifespan_enabled,
+            self._epoch_lifespan_seconds,
+            self.params.epoch_elite_mutation_rate,
+        )
+
+    def _on_epoch_elite_mutation_rate_changed(self, value: float):
+        self.params.epoch_elite_mutation_rate = float(value)
+        self.world.params.epoch_elite_mutation_rate = float(value)
+        self.param_panel.sync_field_value('epoch_elite_mutation_rate', float(value))
+        self._update_ui()
 
     def _epoch_elapsed_seconds(self):
         return max(0.0, perf_counter() - self._epoch_started_at)
@@ -225,7 +248,7 @@ class MainWindow(QMainWindow):
         living = sum(1 for c in self.world.creatures.values() if c.alive)
         self.grid_widget.world = self.world
         self.grid_widget.update()
-        self.epoch_panel.update_world(
+        self.transition_panel.update_world(
             self.world,
             elapsed_seconds=self._epoch_elapsed_seconds(),
             lifespan_enabled=self._epoch_lifespan_enabled,
@@ -289,12 +312,20 @@ class MainWindow(QMainWindow):
             from gasp.app.persistence.gamestate_io import load_gamestate
             try:
                 self.world = load_gamestate(path)
+                self.params = self.world.params
                 self._epoch_started_at = perf_counter()
                 self.grid_widget.world = self.world
                 self.grid_widget.clear_selection()
                 self._selected_creature = None
                 self.debug_panel.clear_creature("No creature selected")
                 self.param_panel.sync_seed_value(self.world.seed)
+                self.param_panel.sync_field_value('epoch_elite_count', self.params.epoch_elite_count)
+                self.param_panel.sync_field_value('epoch_elite_mutation_rate', self.params.epoch_elite_mutation_rate)
+                self.transition_panel.set_transition_settings(
+                    self._epoch_lifespan_enabled,
+                    self._epoch_lifespan_seconds,
+                    self.params.epoch_elite_mutation_rate,
+                )
                 self._update_ui()
                 self.gamestate_panel.set_status(f"Loaded: {path}")
             except Exception as e:

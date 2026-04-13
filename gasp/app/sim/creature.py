@@ -38,7 +38,6 @@ class Creature:
     event_log: list = field(default_factory=list)
     debug_color: tuple = (128, 128, 255)
     selected: bool = False
-    fitness_history: list = field(default_factory=list)
     learned_biases: list = field(default_factory=list)
     reward_history: list = field(default_factory=list)
     reward_trace: float = 0.0
@@ -85,7 +84,6 @@ class Creature:
             'event_log': self.event_log,
             'debug_color': list(self.debug_color),
             'selected': self.selected,
-            'fitness_history': self.fitness_history,
             'learned_biases': self.learned_biases,
             'reward_history': self.reward_history,
             'reward_trace': self.reward_trace,
@@ -133,7 +131,6 @@ class Creature:
         dc = d.get('debug_color', [128, 128, 255])
         c.debug_color = tuple(dc)
         c.selected = d.get('selected', False)
-        c.fitness_history = d.get('fitness_history', [])
         c.learned_biases = list(d.get('learned_biases', []))
         c.reward_history = list(d.get('reward_history', []))
         c.reward_trace = d.get('reward_trace', 0.0)
