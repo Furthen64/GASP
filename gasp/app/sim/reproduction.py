@@ -33,6 +33,7 @@ def mutate(genome, rng, params):
     import copy
     from gasp.app.sim.constants import SignalId, CompareOp
     from gasp.app.sim.genetics import Promoter, Unit
+    state_count = params.clamped_internal_state_count()
     genome = [copy.deepcopy(u) for u in genome]
     result = []
     for unit in genome:
@@ -62,19 +63,17 @@ def mutate(genome, rng, params):
             unit.gene = rng.choice(list(ActionType))
         r7 = rng.random()
         if r7 < params.mutation_rate * 0.4:
-            from gasp.app.sim.constants import MAX_INTERNAL_STATES
-            unit.source_state = rng.randint(0, MAX_INTERNAL_STATES - 1) if rng.random() < 0.7 else None
+            unit.source_state = rng.randint(0, state_count - 1) if rng.random() < 0.7 else None
         r8 = rng.random()
         if r8 < params.mutation_rate * 0.4:
-            from gasp.app.sim.constants import MAX_INTERNAL_STATES
-            unit.next_state = rng.randint(0, MAX_INTERNAL_STATES - 1) if rng.random() < 0.8 else None
-        result.append(validate_unit(unit))
+            unit.next_state = rng.randint(0, state_count - 1) if rng.random() < 0.8 else None
+        result.append(validate_unit(unit, state_count=state_count))
         # Duplicate
         if rng.random() < params.mutation_rate * 0.1:
             import copy
-            result.append(validate_unit(copy.deepcopy(unit)))
+            result.append(validate_unit(copy.deepcopy(unit), state_count=state_count))
     if not result:
-        result = make_random_genome(rng, 4)
+        result = make_random_genome(rng, 4, params=params)
     return result
 
 def asexual_reproduce(parent, world):

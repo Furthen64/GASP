@@ -117,6 +117,7 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.seed_mode == SEED_MODE_RANDOM
     assert params.food_spawn_rate == 0.0001
     assert params.initial_food_count == 102
+    assert params.internal_state_count == 4
     assert params.energy_per_food == 50.0
     assert params.move_energy_area_scale == 0.35
     assert params.epoch_fitness_reproduction_weight == 8.0
@@ -516,7 +517,7 @@ def test_state_signals_can_drive_branching_rules():
     assert creature.last_action == ActionType.TURN_RIGHT
     assert creature.facing == Facing.E
 
-def test_long_straight_run_gets_turn_bias_in_open_space():
+def test_legacy_reactive_genome_keeps_straight_path_without_turn_injection():
     params = Parameters(
         world_width=20,
         world_height=12,
@@ -559,10 +560,23 @@ def test_long_straight_run_gets_turn_bias_in_open_space():
     for _ in range(7):
         world.step_world()
 
-    assert creature.last_action in (ActionType.TURN_LEFT, ActionType.TURN_RIGHT)
-    assert creature.facing in (Facing.N, Facing.S)
-    assert (creature.x, creature.y) == (9, 5)
-    assert creature.straight_move_streak == 0
+    assert creature.last_action == ActionType.MOVE
+    assert creature.facing == Facing.E
+    assert (creature.x, creature.y) == (10, 5)
+    assert creature.straight_move_streak == 7
+
+def test_internal_state_count_limits_generated_states():
+    from gasp.app.sim.genome_codec import make_random_genome
+    from gasp.app.util.rng import RNG
+
+    params = Parameters(internal_state_count=2)
+    genome = make_random_genome(RNG(4), 10, params=params)
+
+    for unit in genome:
+        if unit.source_state is not None:
+            assert unit.source_state < 2
+        if unit.next_state is not None:
+            assert unit.next_state < 2
 
 def test_build_next_epoch_world_carries_best_creatures():
     params = Parameters(

@@ -277,144 +277,129 @@ class World:
         self._ensure_spatial_index()
         return self._occupied_cells_cache
 
-    def _score_actions(self, creature) -> tuple[dict[ActionType, float], dict[ActionType, int | None]]:
-        """Evaluate chromosome promoters and return accumulated action scores."""
+    def _get_signal_value(self, creature, signal_id):
+        sensed = creature.sensed
+        if signal_id == SignalId.AGE:
+            return float(creature.age)
+        elif signal_id == SignalId.ENERGY:
+            return creature.energy
+        elif signal_id == SignalId.CURRENT_STATE:
+            return float(creature.program_state)
+        elif signal_id == SignalId.STATE_TICKS:
+            return float(creature.state_ticks)
+        elif signal_id == SignalId.WIDTH:
+            return float(creature.width)
+        elif signal_id == SignalId.HEIGHT:
+            return float(creature.height)
+        elif signal_id == SignalId.AREA:
+            return float(creature.width * creature.height)
+        elif signal_id == SignalId.PREGNANCIES:
+            return float(creature.pregnancies_completed)
+        elif signal_id == SignalId.DISTANCE:
+            return creature.distance_traveled
+        elif signal_id == SignalId.PREV_ACTION:
+            return float(creature.last_action.value if creature.last_action else 0)
+        elif signal_id == SignalId.LAST_ACTION_SUCCESS:
+            return float(creature.last_action_success)
+        elif signal_id == SignalId.FOOD_COUNT:
+            return float(sensed.get('food_count', 0))
+        elif signal_id == SignalId.TOXIC_COUNT:
+            return float(sensed.get('toxic_count', 0))
+        elif signal_id == SignalId.WALL_COUNT:
+            return float(sensed.get('wall_count', 0))
+        elif signal_id == SignalId.FREE_COUNT:
+            return float(sensed.get('free_count', 0))
+        elif signal_id == SignalId.PARTNER_COUNT:
+            return float(sensed.get('partner_count', 0))
+        elif signal_id == SignalId.CAN_GROW:
+            return float(sensed.get('can_grow', 0))
+        elif signal_id == SignalId.CAN_MOVE:
+            return float(sensed.get('can_move_forward', 0))
+        elif signal_id == SignalId.CAN_REPRODUCE:
+            return float(sensed.get('can_reproduce', 0))
+        elif signal_id == SignalId.CAN_EAT:
+            return float(sensed.get('can_eat', 0))
+        elif signal_id == SignalId.FOOD_AHEAD:
+            return float(sensed.get('food_ahead', 0))
+        elif signal_id == SignalId.FOOD_LEFT:
+            return float(sensed.get('food_left', 0))
+        elif signal_id == SignalId.FOOD_RIGHT:
+            return float(sensed.get('food_right', 0))
+        elif signal_id == SignalId.WALL_AHEAD:
+            return float(sensed.get('wall_ahead', 0))
+        elif signal_id == SignalId.WALL_LEFT:
+            return float(sensed.get('wall_left', 0))
+        elif signal_id == SignalId.WALL_RIGHT:
+            return float(sensed.get('wall_right', 0))
+        elif signal_id == SignalId.FREE_AHEAD:
+            return float(sensed.get('free_ahead', 0))
+        elif signal_id == SignalId.FREE_LEFT:
+            return float(sensed.get('free_left', 0))
+        elif signal_id == SignalId.FREE_RIGHT:
+            return float(sensed.get('free_right', 0))
+        return 0.0
+
+    def _compare_signal(self, value, op, threshold):
+        if op == CompareOp.LT:
+            return value < threshold
+        elif op == CompareOp.LE:
+            return value <= threshold
+        elif op == CompareOp.EQ:
+            return abs(value - threshold) < 0.5
+        elif op == CompareOp.GE:
+            return value >= threshold
+        elif op == CompareOp.GT:
+            return value > threshold
+        return False
+
+    def _matching_units(self, creature, include_stateful: bool | None) -> list:
+        units = []
+        for unit in creature.chromosome:
+            is_stateful = unit.source_state is not None or unit.next_state is not None
+            if include_stateful is True and not is_stateful:
+                continue
+            if include_stateful is False and is_stateful:
+                continue
+            if unit.source_state is not None and unit.source_state != creature.program_state:
+                continue
+            signal_value = self._get_signal_value(creature, unit.promoter.signal_id)
+            if not self._compare_signal(signal_value, unit.promoter.compare_op, unit.promoter.threshold):
+                continue
+            units.append(unit)
+        return units
+
+    def _select_stateful_rule(self, creature) -> tuple[ActionType, int | None]:
+        matching_units = self._matching_units(creature, include_stateful=True)
+        if not matching_units:
+            return ActionType.IDLE, None
+
+        matching_units.sort(key=lambda unit: unit.promoter.base_strength, reverse=True)
+        for unit in matching_units:
+            if unit.target_type == 'gene' and unit.gene is not None and self._is_action_feasible(creature, unit.gene):
+                return unit.gene, unit.next_state
+            if unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
+                for action in DEFAULT_MODULES[unit.module_id]:
+                    if self._is_action_feasible(creature, action):
+                        return action, unit.next_state
+        return ActionType.IDLE, None
+
+    def _score_legacy_actions(self, creature) -> dict[ActionType, float]:
+        """Evaluate legacy reactive chromosomes and return accumulated action scores."""
         sensed = creature.sensed
         action_scores = {}
-        action_state_targets = {}
-        action_state_strengths = {}
-
-        def record_action(action, score, next_state):
-            action_scores[action] = action_scores.get(action, 0.0) + score
-            if next_state is None:
-                return
-            if score >= action_state_strengths.get(action, float('-inf')):
-                action_state_strengths[action] = score
-                action_state_targets[action] = next_state
-
-        def get_signal_value(signal_id):
-            if signal_id == SignalId.AGE:
-                return float(creature.age)
-            elif signal_id == SignalId.ENERGY:
-                return creature.energy
-            elif signal_id == SignalId.CURRENT_STATE:
-                return float(creature.program_state)
-            elif signal_id == SignalId.STATE_TICKS:
-                return float(creature.state_ticks)
-            elif signal_id == SignalId.WIDTH:
-                return float(creature.width)
-            elif signal_id == SignalId.HEIGHT:
-                return float(creature.height)
-            elif signal_id == SignalId.AREA:
-                return float(creature.width * creature.height)
-            elif signal_id == SignalId.PREGNANCIES:
-                return float(creature.pregnancies_completed)
-            elif signal_id == SignalId.DISTANCE:
-                return creature.distance_traveled
-            elif signal_id == SignalId.PREV_ACTION:
-                return float(creature.last_action.value if creature.last_action else 0)
-            elif signal_id == SignalId.LAST_ACTION_SUCCESS:
-                return float(creature.last_action_success)
-            elif signal_id == SignalId.FOOD_COUNT:
-                return float(sensed.get('food_count', 0))
-            elif signal_id == SignalId.TOXIC_COUNT:
-                return float(sensed.get('toxic_count', 0))
-            elif signal_id == SignalId.WALL_COUNT:
-                return float(sensed.get('wall_count', 0))
-            elif signal_id == SignalId.FREE_COUNT:
-                return float(sensed.get('free_count', 0))
-            elif signal_id == SignalId.PARTNER_COUNT:
-                return float(sensed.get('partner_count', 0))
-            elif signal_id == SignalId.CAN_GROW:
-                return float(sensed.get('can_grow', 0))
-            elif signal_id == SignalId.CAN_MOVE:
-                return float(sensed.get('can_move_forward', 0))
-            elif signal_id == SignalId.CAN_REPRODUCE:
-                return float(sensed.get('can_reproduce', 0))
-            elif signal_id == SignalId.CAN_EAT:
-                return float(sensed.get('can_eat', 0))
-            elif signal_id == SignalId.FOOD_AHEAD:
-                return float(sensed.get('food_ahead', 0))
-            elif signal_id == SignalId.FOOD_LEFT:
-                return float(sensed.get('food_left', 0))
-            elif signal_id == SignalId.FOOD_RIGHT:
-                return float(sensed.get('food_right', 0))
-            elif signal_id == SignalId.WALL_AHEAD:
-                return float(sensed.get('wall_ahead', 0))
-            elif signal_id == SignalId.WALL_LEFT:
-                return float(sensed.get('wall_left', 0))
-            elif signal_id == SignalId.WALL_RIGHT:
-                return float(sensed.get('wall_right', 0))
-            elif signal_id == SignalId.FREE_AHEAD:
-                return float(sensed.get('free_ahead', 0))
-            elif signal_id == SignalId.FREE_LEFT:
-                return float(sensed.get('free_left', 0))
-            elif signal_id == SignalId.FREE_RIGHT:
-                return float(sensed.get('free_right', 0))
-            return 0.0
-
-        def compare(value, op, threshold):
-            if op == CompareOp.LT:
-                return value < threshold
-            elif op == CompareOp.LE:
-                return value <= threshold
-            elif op == CompareOp.EQ:
-                return abs(value - threshold) < 0.5
-            elif op == CompareOp.GE:
-                return value >= threshold
-            elif op == CompareOp.GT:
-                return value > threshold
-            return False
-
-        def matches_program_state(unit):
-            return unit.source_state is None or unit.source_state == creature.program_state
-
-        for unit in creature.chromosome:
-            if not matches_program_state(unit):
-                continue
-            sig_val = get_signal_value(unit.promoter.signal_id)
-            fires = compare(sig_val, unit.promoter.compare_op, unit.promoter.threshold)
-            if not fires:
-                continue
+        for unit in self._matching_units(creature, include_stateful=False):
             score = unit.promoter.base_strength
             if unit.target_type == 'gene' and unit.gene is not None:
-                record_action(unit.gene, score, unit.next_state)
+                action_scores[unit.gene] = action_scores.get(unit.gene, 0.0) + score
             elif unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
                 module_actions = DEFAULT_MODULES[unit.module_id]
                 per_action = score / len(module_actions)
                 for at in module_actions:
-                    record_action(at, per_action, unit.next_state)
-
-        self._apply_exploration_turn_bias(creature, action_scores)
-
-        return action_scores, action_state_targets
+                    action_scores[at] = action_scores.get(at, 0.0) + per_action
+        return action_scores
 
     def _creature_has_stateful_rules(self, creature) -> bool:
         return any(unit.source_state is not None or unit.next_state is not None for unit in creature.chromosome)
-
-    def _apply_exploration_turn_bias(self, creature, action_scores: dict[ActionType, float]):
-        if self._creature_has_stateful_rules(creature):
-            return
-        if creature.straight_move_streak < 6:
-            return
-        if not creature.sensed.get('can_move_forward', 0):
-            return
-        if creature.sensed.get('food_ahead', 0) or creature.sensed.get('food_left', 0) or creature.sensed.get('food_right', 0):
-            return
-
-        free_left = bool(creature.sensed.get('free_left', 0))
-        free_right = bool(creature.sensed.get('free_right', 0))
-        if not free_left and not free_right:
-            return
-
-        if free_left and not free_right:
-            turn_action = ActionType.TURN_LEFT
-        elif free_right and not free_left:
-            turn_action = ActionType.TURN_RIGHT
-        else:
-            turn_action = ActionType.TURN_LEFT if (creature.id + self.step + creature.straight_move_streak) % 2 == 0 else ActionType.TURN_RIGHT
-
-        action_scores[turn_action] = max(action_scores.get(turn_action, 0.0), 3.25)
 
     def _is_action_feasible(self, creature, action: ActionType) -> bool:
         if action == ActionType.MOVE:
@@ -449,7 +434,10 @@ class World:
 
     def _evaluate_genome(self, creature) -> tuple[ActionType, int | None]:
         """Return the highest-scoring action that is currently feasible."""
-        action_scores, action_state_targets = self._score_actions(creature)
+        if self._creature_has_stateful_rules(creature):
+            return self._select_stateful_rule(creature)
+
+        action_scores = self._score_legacy_actions(creature)
 
         if not action_scores:
             return ActionType.IDLE, None
@@ -457,7 +445,7 @@ class World:
         ranked_actions = sorted(action_scores.items(), key=lambda item: item[1], reverse=True)
         for action, _score in ranked_actions:
             if self._is_action_feasible(creature, action):
-                return action, action_state_targets.get(action)
+                return action, None
         return ActionType.IDLE, None
 
     def _record_action_outcome(self, creature, action: ActionType, success: bool, next_state: int | None):

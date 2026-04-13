@@ -19,7 +19,8 @@ def setup_save_dir():
 
 def test_save_load_params():
     params = Parameters(world_width=50, world_height=40, mutation_rate=0.1,
-                        max_creatures=77, pregnancy_chance=0.35)
+                        max_creatures=77, pregnancy_chance=0.35,
+                        internal_state_count=6)
     path = os.path.join(SAVE_DIR, 'test_params.json')
     save_params(params, path)
     loaded = load_params(path)
@@ -28,6 +29,7 @@ def test_save_load_params():
     assert loaded.mutation_rate == params.mutation_rate
     assert loaded.max_creatures == params.max_creatures
     assert loaded.pregnancy_chance == params.pregnancy_chance
+    assert loaded.internal_state_count == params.internal_state_count
 
 def test_save_load_gamestate():
     CREATURE_ID_GEN.reset(0)

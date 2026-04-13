@@ -28,6 +28,7 @@ class Parameters:
     initial_food_count: int = 102
     initial_toxic_count: int = 10
     initial_food_min_distance_from_creatures: int = 3
+    internal_state_count: int = 4
     genome_min_units: int = 4
     genome_max_units: int = 20
     initial_energy: float = 100.0
@@ -45,6 +46,9 @@ class Parameters:
 
     def reproduction_energy_threshold(self) -> float:
         return self.initial_energy + self.reproduction_cost
+
+    def clamped_internal_state_count(self) -> int:
+        return max(1, min(8, int(self.internal_state_count)))
 
     def to_dict(self):
         return asdict(self)

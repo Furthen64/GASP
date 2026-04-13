@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import (
     QWidget, QScrollArea, QVBoxLayout, QLabel,
-    QTextEdit, QGroupBox, QFormLayout
+    QTextEdit, QGroupBox, QFormLayout, QGridLayout, QHBoxLayout
 )
+from PySide6.QtCore import Qt
 from gasp.app.sim.actions import move_energy_cost
 from gasp.app.sim.fitness import compute_fitness
 
@@ -10,6 +11,129 @@ try:
     HAS_PYQTGRAPH = True
 except ImportError:
     HAS_PYQTGRAPH = False
+
+
+GENOME_SIGNATURE_COLORS = {
+    0: "#3a3a3a",
+    1: "#bfbfbf",
+    2: "#d84a4a",
+    3: "#4cb45b",
+    4: "#3e73d9",
+    5: "#f08cc0",
+    6: "#d6cb44",
+    7: "#7d56c2",
+    8: "#1d3f91",
+    9: "#44c9d6",
+}
+
+
+class GenomeSignatureWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._cells = []
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        caption = QLabel("Top row: promoter signal | Bottom row: target/state")
+        caption.setWordWrap(True)
+        layout.addWidget(caption)
+
+        grid_row = QHBoxLayout()
+        grid_row.setContentsMargins(0, 0, 0, 0)
+        grid_row.setSpacing(6)
+        layout.addLayout(grid_row)
+
+        row_labels = QVBoxLayout()
+        row_labels.setContentsMargins(0, 18, 0, 0)
+        row_labels.setSpacing(2)
+        promoter_label = QLabel("P")
+        promoter_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        target_label = QLabel("T")
+        target_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row_labels.addWidget(promoter_label)
+        row_labels.addWidget(target_label)
+        grid_row.addLayout(row_labels)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(2)
+        grid.setVerticalSpacing(2)
+        grid_row.addLayout(grid)
+
+        for row in range(2):
+            for column in range(20):
+                label = QLabel("0")
+                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                label.setMinimumSize(18, 18)
+                label.setMaximumSize(18, 18)
+                label.setStyleSheet(self._cell_style(0))
+                grid.addWidget(label, row, column)
+                self._cells.append(label)
+
+    def _cell_style(self, digit: int) -> str:
+        text_color = "#111111" if digit in (1, 5, 6, 9) else "#f5f5f5"
+        return (
+            f"background-color: {GENOME_SIGNATURE_COLORS[digit]};"
+            f"color: {text_color};"
+            "border: 1px solid #202020;"
+            "font-size: 10px;"
+            "font-weight: 600;"
+        )
+
+    def clear_signature(self):
+        for index, cell in enumerate(self._cells):
+            cell.setText("0")
+            cell.setToolTip(f"Slot {index % 20 + 1}: empty")
+            cell.setStyleSheet(self._cell_style(0))
+
+    def update_signature(self, creature):
+        promoter_digits = [0] * 20
+        target_digits = [0] * 20
+        promoter_tips = [f"Gene {index}: empty" for index in range(20)]
+        target_tips = [f"Gene {index}: empty" for index in range(20)]
+
+        for index, unit in enumerate(creature.chromosome[:20]):
+            promoter_digit = unit.promoter.signal_id.value % 10
+            promoter_digits[index] = promoter_digit
+            promoter_tips[index] = (
+                f"Gene {index}: signal={unit.promoter.signal_id.name}, "
+                f"compare={unit.promoter.compare_op.name}, "
+                f"threshold={unit.promoter.threshold:.1f}, "
+                f"strength={unit.promoter.base_strength:.1f}"
+            )
+
+            if unit.target_type == 'gene' and unit.gene is not None:
+                target_base = unit.gene.value
+                target_name = unit.gene.name
+            elif unit.target_type == 'module' and unit.module_id is not None:
+                target_base = unit.module_id
+                target_name = f"MOD{unit.module_id}"
+            else:
+                target_base = 0
+                target_name = "NONE"
+            source_state = unit.source_state or 0
+            next_state = unit.next_state or 0
+            target_digit = (target_base + (source_state * 3) + (next_state * 5)) % 10
+            target_digits[index] = target_digit
+            target_tips[index] = (
+                f"Gene {index}: target={target_name}, source_state={unit.source_state}, "
+                f"next_state={unit.next_state}"
+            )
+
+        for column in range(20):
+            promoter_cell = self._cells[column]
+            target_cell = self._cells[20 + column]
+            promoter_digit = promoter_digits[column]
+            target_digit = target_digits[column]
+            promoter_cell.setText(str(promoter_digit))
+            target_cell.setText(str(target_digit))
+            promoter_cell.setToolTip(promoter_tips[column])
+            target_cell.setToolTip(target_tips[column])
+            promoter_cell.setStyleSheet(self._cell_style(promoter_digit))
+            target_cell.setStyleSheet(self._cell_style(target_digit))
 
 class DebugPanel(QWidget):
     def __init__(self, parent=None):
@@ -67,6 +191,8 @@ class DebugPanel(QWidget):
         # Chromosome
         chrom_group = QGroupBox("Chromosome")
         chrom_layout = QVBoxLayout(chrom_group)
+        self._genome_signature = GenomeSignatureWidget()
+        chrom_layout.addWidget(self._genome_signature)
         self._chrom_text = QTextEdit()
         self._chrom_text.setReadOnly(True)
         self._chrom_text.setMaximumHeight(120)
@@ -92,6 +218,7 @@ class DebugPanel(QWidget):
         for lbl in self._sense_labels.values():
             lbl.setText("-")
         self._action_log.setText(message)
+        self._genome_signature.clear_signature()
         self._chrom_text.clear()
         if self._plot_widget:
             self._plot_widget.clear()
@@ -143,6 +270,7 @@ class DebugPanel(QWidget):
         self._action_log.setText(log_text)
 
         # Chromosome summary
+        self._genome_signature.update_signature(creature)
         chrom_lines = []
         for i, unit in enumerate(creature.chromosome[:10]):
             if unit.target_type == 'gene':
@@ -152,7 +280,8 @@ class DebugPanel(QWidget):
             chrom_lines.append(
                 f"[{i}] {unit.promoter.signal_id.name} "
                 f"{unit.promoter.compare_op.name} "
-                f"{unit.promoter.threshold:.1f} -> {target}"
+                f"{unit.promoter.threshold:.1f} -> {target} "
+                f"(S:{unit.source_state}, N:{unit.next_state})"
             )
         self._chrom_text.setText("\n".join(chrom_lines))
 

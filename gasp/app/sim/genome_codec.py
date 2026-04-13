@@ -67,8 +67,8 @@ def _baseline_locomotion_units() -> list[Unit]:
     ]
 
 
-def _starter_behavior_programs() -> list[list[Unit]]:
-    return [
+def _starter_behavior_programs(state_count: int) -> list[list[Unit]]:
+    programs = [
         [
             Unit(
                 promoter=Promoter(
@@ -174,6 +174,15 @@ def _starter_behavior_programs() -> list[list[Unit]]:
             ),
         ],
     ]
+    valid_programs = []
+    for program in programs:
+        highest_state = max(
+            max(unit.source_state or 0, unit.next_state or 0)
+            for unit in program
+        )
+        if highest_state < state_count:
+            valid_programs.append(program)
+    return valid_programs or [programs[0]]
 
 def encode_unit(unit: Unit) -> dict:
     return {
@@ -216,8 +225,8 @@ def decode_unit(d: dict) -> Unit:
         if next_state is not None:
             next_state = int(next_state)
         return validate_unit(Unit(promoter=promoter, target_type=target_type,
-                                  gene=gene, module_id=module_id,
-                                  source_state=source_state, next_state=next_state))
+                      gene=gene, module_id=module_id,
+                      source_state=source_state, next_state=next_state))
     except Exception:
         # Return safe default on any error
         return Unit(promoter=Promoter(), gene=ActionType.IDLE)
@@ -230,14 +239,16 @@ def decode_genome(lst: list) -> list:
         return []
     return [decode_unit(d) for d in lst]
 
-def make_random_genome(rng, n_units: int = 8) -> list:
+def make_random_genome(rng, n_units: int = 8, params=None) -> list:
     if n_units <= 0:
         return []
+
+    state_count = MAX_INTERNAL_STATES if params is None else params.clamped_internal_state_count()
 
     if n_units < 4:
         return list(_baseline_locomotion_units()[:n_units])
 
-    program_units = [validate_unit(unit) for unit in rng.choice(_starter_behavior_programs())]
+    program_units = [validate_unit(unit, state_count=state_count) for unit in rng.choice(_starter_behavior_programs(state_count))]
     units = list(program_units)
     signal_ids = list(SignalId)
     compare_ops = list(CompareOp)
@@ -258,13 +269,14 @@ def make_random_genome(rng, n_units: int = 8) -> list:
             unit = Unit(promoter=promoter, target_type='gene',
                        gene=rng.choice(action_types), module_id=None)
         if rng.random() < 0.4:
-            unit.source_state = rng.randint(0, MAX_INTERNAL_STATES - 1)
+            unit.source_state = rng.randint(0, state_count - 1)
             if rng.random() < 0.8:
-                unit.next_state = rng.randint(0, MAX_INTERNAL_STATES - 1)
-        units.append(unit)
+                unit.next_state = rng.randint(0, state_count - 1)
+        units.append(validate_unit(unit, state_count=state_count))
     return units
 
-def validate_unit(unit: Unit) -> Unit:
+def validate_unit(unit: Unit, state_count: int = MAX_INTERNAL_STATES) -> Unit:
+    state_count = max(1, min(MAX_INTERNAL_STATES, int(state_count)))
     if not isinstance(unit.promoter.signal_id, SignalId):
         unit.promoter.signal_id = SignalId.ENERGY
     if not isinstance(unit.promoter.compare_op, CompareOp):
@@ -279,7 +291,7 @@ def validate_unit(unit: Unit) -> Unit:
         unit.target_type = 'gene'
         unit.gene = ActionType.IDLE
     if unit.source_state is not None:
-        unit.source_state = max(0, min(MAX_INTERNAL_STATES - 1, int(unit.source_state)))
+        unit.source_state = max(0, min(state_count - 1, int(unit.source_state)))
     if unit.next_state is not None:
-        unit.next_state = max(0, min(MAX_INTERNAL_STATES - 1, int(unit.next_state)))
+        unit.next_state = max(0, min(state_count - 1, int(unit.next_state)))
     return unit

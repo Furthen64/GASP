@@ -41,7 +41,7 @@ class ParameterPanel(QWidget):
                   'max_creatures',
                       'max_age', 'max_size', 'seed', 'initial_food_count',
                       'initial_toxic_count', 'initial_food_min_distance_from_creatures',
-                      'genome_min_units', 'genome_max_units']
+                      'internal_state_count', 'genome_min_units', 'genome_max_units']
         float_params = ['tick_speed', 'pregnancy_chance', 'food_spawn_rate', 'toxic_spawn_rate',
                         'mutation_rate', 'crossover_rate', 'reproduction_cost',
                         'initial_energy', 'energy_per_food', 'energy_per_tick',

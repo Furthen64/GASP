@@ -57,6 +57,18 @@ def test_make_random_genome_respects_requested_length_for_small_genomes():
     assert genome[0].gene == ActionType.MOVE
     assert genome[0].promoter.signal_id == SignalId.CAN_MOVE
 
+def test_make_random_genome_respects_param_state_count():
+    from gasp.app.persistence.params_io import Parameters
+
+    rng = RNG(5)
+    genome = make_random_genome(rng, 12, params=Parameters(internal_state_count=2))
+
+    for unit in genome:
+        if unit.source_state is not None:
+            assert unit.source_state < 2
+        if unit.next_state is not None:
+            assert unit.next_state < 2
+
 def test_validate_unit_clamps_state_indices():
     unit = validate_unit(Unit(
         promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=1.0, base_strength=1.0),
@@ -68,6 +80,18 @@ def test_validate_unit_clamps_state_indices():
 
     assert unit.source_state == 0
     assert unit.next_state == 7
+
+def test_validate_unit_respects_custom_state_count():
+    unit = validate_unit(Unit(
+        promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=1.0, base_strength=1.0),
+        target_type='gene',
+        gene=ActionType.MOVE,
+        source_state=3,
+        next_state=8,
+    ), state_count=2)
+
+    assert unit.source_state == 1
+    assert unit.next_state == 1
 
 def test_decode_unit_never_crashes():
     # Test with various garbage inputs

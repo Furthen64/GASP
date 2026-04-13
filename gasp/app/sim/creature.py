@@ -122,7 +122,7 @@ def make_creature(rng, params, birth_step=0, x=1, y=1, parent_ids=None, generati
     from gasp.app.sim.genome_codec import make_random_genome
     cid = CREATURE_ID_GEN.next_id()
     n_units = rng.randint(params.genome_min_units, params.genome_max_units)
-    genome = make_random_genome(rng, n_units)
+    genome = make_random_genome(rng, n_units, params=params)
     color = (rng.randint(50, 255), rng.randint(50, 255), rng.randint(50, 255))
     return Creature(
         id=cid,
