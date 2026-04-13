@@ -10,7 +10,8 @@ from gasp.app.util.rng import RNG
 def make_sample_unit():
     p = Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT,
                   threshold=50.0, base_strength=1.5)
-    return Unit(promoter=p, target_type='gene', gene=ActionType.MOVE, module_id=None)
+    return Unit(promoter=p, target_type='gene', gene=ActionType.MOVE, module_id=None,
+                source_state=1, next_state=2)
 
 def test_encode_decode_roundtrip():
     unit = make_sample_unit()
@@ -21,6 +22,8 @@ def test_encode_decode_roundtrip():
     assert unit2.promoter.threshold == unit.promoter.threshold
     assert unit2.gene == unit.gene
     assert unit2.target_type == unit.target_type
+    assert unit2.source_state == unit.source_state
+    assert unit2.next_state == unit.next_state
 
 def test_genome_encode_decode_roundtrip():
     rng = RNG(123)
@@ -36,10 +39,8 @@ def test_make_random_genome_valid():
     rng = RNG(42)
     genome = make_random_genome(rng, 8)
     assert len(genome) == 8
-    assert genome[0].gene == ActionType.MOVE
-    assert genome[1].gene == ActionType.TURN_RIGHT
-    assert genome[0].promoter.signal_id == SignalId.CAN_MOVE
-    assert genome[1].promoter.signal_id == SignalId.WALL_AHEAD
+    assert any(unit.source_state is not None for unit in genome)
+    assert any(unit.next_state is not None for unit in genome)
     for unit in genome:
         assert isinstance(unit.promoter.signal_id, SignalId)
         assert isinstance(unit.promoter.compare_op, CompareOp)
@@ -55,6 +56,18 @@ def test_make_random_genome_respects_requested_length_for_small_genomes():
     assert len(genome) == 1
     assert genome[0].gene == ActionType.MOVE
     assert genome[0].promoter.signal_id == SignalId.CAN_MOVE
+
+def test_validate_unit_clamps_state_indices():
+    unit = validate_unit(Unit(
+        promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=1.0, base_strength=1.0),
+        target_type='gene',
+        gene=ActionType.MOVE,
+        source_state=-4,
+        next_state=99,
+    ))
+
+    assert unit.source_state == 0
+    assert unit.next_state == 7
 
 def test_decode_unit_never_crashes():
     # Test with various garbage inputs

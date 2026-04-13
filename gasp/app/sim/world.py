@@ -277,16 +277,30 @@ class World:
         self._ensure_spatial_index()
         return self._occupied_cells_cache
 
-    def _score_actions(self, creature) -> dict[ActionType, float]:
+    def _score_actions(self, creature) -> tuple[dict[ActionType, float], dict[ActionType, int | None]]:
         """Evaluate chromosome promoters and return accumulated action scores."""
         sensed = creature.sensed
         action_scores = {}
+        action_state_targets = {}
+        action_state_strengths = {}
+
+        def record_action(action, score, next_state):
+            action_scores[action] = action_scores.get(action, 0.0) + score
+            if next_state is None:
+                return
+            if score >= action_state_strengths.get(action, float('-inf')):
+                action_state_strengths[action] = score
+                action_state_targets[action] = next_state
 
         def get_signal_value(signal_id):
             if signal_id == SignalId.AGE:
                 return float(creature.age)
             elif signal_id == SignalId.ENERGY:
                 return creature.energy
+            elif signal_id == SignalId.CURRENT_STATE:
+                return float(creature.program_state)
+            elif signal_id == SignalId.STATE_TICKS:
+                return float(creature.state_ticks)
             elif signal_id == SignalId.WIDTH:
                 return float(creature.width)
             elif signal_id == SignalId.HEIGHT:
@@ -299,6 +313,8 @@ class World:
                 return creature.distance_traveled
             elif signal_id == SignalId.PREV_ACTION:
                 return float(creature.last_action.value if creature.last_action else 0)
+            elif signal_id == SignalId.LAST_ACTION_SUCCESS:
+                return float(creature.last_action_success)
             elif signal_id == SignalId.FOOD_COUNT:
                 return float(sensed.get('food_count', 0))
             elif signal_id == SignalId.TOXIC_COUNT:
@@ -350,25 +366,35 @@ class World:
                 return value > threshold
             return False
 
+        def matches_program_state(unit):
+            return unit.source_state is None or unit.source_state == creature.program_state
+
         for unit in creature.chromosome:
+            if not matches_program_state(unit):
+                continue
             sig_val = get_signal_value(unit.promoter.signal_id)
             fires = compare(sig_val, unit.promoter.compare_op, unit.promoter.threshold)
             if not fires:
                 continue
             score = unit.promoter.base_strength
             if unit.target_type == 'gene' and unit.gene is not None:
-                action_scores[unit.gene] = action_scores.get(unit.gene, 0.0) + score
+                record_action(unit.gene, score, unit.next_state)
             elif unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
                 module_actions = DEFAULT_MODULES[unit.module_id]
                 per_action = score / len(module_actions)
                 for at in module_actions:
-                    action_scores[at] = action_scores.get(at, 0.0) + per_action
+                    record_action(at, per_action, unit.next_state)
 
         self._apply_exploration_turn_bias(creature, action_scores)
 
-        return action_scores
+        return action_scores, action_state_targets
+
+    def _creature_has_stateful_rules(self, creature) -> bool:
+        return any(unit.source_state is not None or unit.next_state is not None for unit in creature.chromosome)
 
     def _apply_exploration_turn_bias(self, creature, action_scores: dict[ActionType, float]):
+        if self._creature_has_stateful_rules(creature):
+            return
         if creature.straight_move_streak < 6:
             return
         if not creature.sensed.get('can_move_forward', 0):
@@ -421,20 +447,30 @@ class World:
             return bool(creature.sensed.get('can_eat', 0))
         return True
 
-    def _evaluate_genome(self, creature) -> ActionType:
+    def _evaluate_genome(self, creature) -> tuple[ActionType, int | None]:
         """Return the highest-scoring action that is currently feasible."""
-        action_scores = self._score_actions(creature)
+        action_scores, action_state_targets = self._score_actions(creature)
 
         if not action_scores:
-            return ActionType.IDLE
+            return ActionType.IDLE, None
 
         ranked_actions = sorted(action_scores.items(), key=lambda item: item[1], reverse=True)
         for action, _score in ranked_actions:
             if self._is_action_feasible(creature, action):
-                return action
-        return ActionType.IDLE
+                return action, action_state_targets.get(action)
+        return ActionType.IDLE, None
 
-    def _record_action_outcome(self, creature, action: ActionType, success: bool):
+    def _record_action_outcome(self, creature, action: ActionType, success: bool, next_state: int | None):
+        creature.last_action_success = success
+        if next_state is not None:
+            if creature.program_state == next_state:
+                creature.state_ticks += 1
+            else:
+                creature.program_state = next_state
+                creature.state_ticks = 0
+        else:
+            creature.state_ticks += 1
+
         if action == ActionType.MOVE and success:
             creature.straight_move_streak += 1
             return
@@ -501,13 +537,13 @@ class World:
 
             # c/d. evaluate chromosome -> get best action
             phase_start = perf_counter()
-            action = self._evaluate_genome(creature)
+            action, next_state = self._evaluate_genome(creature)
             evaluate_ms += (perf_counter() - phase_start) * 1000.0
 
             # e. execute action
             phase_start = perf_counter()
             success = execute_action(action, creature, self)
-            self._record_action_outcome(creature, action, success)
+            self._record_action_outcome(creature, action, success, next_state)
             creature.last_action = action
             creature.log_action(self.step, action.name, success)
             current_position = (creature.x, creature.y)

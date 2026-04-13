@@ -403,6 +403,119 @@ def test_step_skips_eat_when_no_food_is_reachable():
     assert creature.last_action == ActionType.MOVE
     assert (creature.x, creature.y) == (4, 3)
 
+def test_stateful_program_executes_move_move_turn_sequence():
+    params = Parameters(
+        world_width=10,
+        world_height=10,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+        move_energy_base_cost=0.0,
+        move_energy_area_scale=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=2,
+        y=2,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(2, 2)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=0.0, base_strength=5.0),
+                target_type='gene',
+                gene=ActionType.MOVE,
+                source_state=0,
+                next_state=1,
+            ),
+            Unit(
+                promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=0.0, base_strength=5.0),
+                target_type='gene',
+                gene=ActionType.MOVE,
+                source_state=1,
+                next_state=2,
+            ),
+            Unit(
+                promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=0.0, base_strength=5.0),
+                target_type='gene',
+                gene=ActionType.TURN_RIGHT,
+                source_state=2,
+                next_state=0,
+            ),
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.invalidate_spatial_index()
+
+    world.step_world()
+    assert creature.last_action == ActionType.MOVE
+    assert (creature.x, creature.y) == (3, 2)
+    assert creature.program_state == 1
+
+    world.step_world()
+    assert creature.last_action == ActionType.MOVE
+    assert (creature.x, creature.y) == (4, 2)
+    assert creature.program_state == 2
+
+    world.step_world()
+    assert creature.last_action == ActionType.TURN_RIGHT
+    assert (creature.x, creature.y) == (4, 2)
+    assert creature.facing == Facing.S
+    assert creature.program_state == 0
+
+def test_state_signals_can_drive_branching_rules():
+    params = Parameters(
+        world_width=8,
+        world_height=8,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=3,
+        y=3,
+        facing=Facing.N,
+        energy=100.0,
+        program_state=2,
+        state_ticks=3,
+        last_action_success=True,
+        visited_positions=[(3, 3)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(signal_id=SignalId.CURRENT_STATE, compare_op=CompareOp.EQ, threshold=2.0, base_strength=2.0),
+                target_type='gene',
+                gene=ActionType.TURN_LEFT,
+            ),
+            Unit(
+                promoter=Promoter(signal_id=SignalId.STATE_TICKS, compare_op=CompareOp.GE, threshold=3.0, base_strength=3.0),
+                target_type='gene',
+                gene=ActionType.TURN_RIGHT,
+            ),
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.invalidate_spatial_index()
+
+    world.step_world()
+
+    assert creature.last_action == ActionType.TURN_RIGHT
+    assert creature.facing == Facing.E
+
 def test_long_straight_run_gets_turn_bias_in_open_space():
     params = Parameters(
         world_width=20,

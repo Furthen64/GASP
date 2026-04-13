@@ -15,6 +15,8 @@ class Unit:
     target_type: str = 'gene'  # 'gene' or 'module'
     gene: Optional[ActionType] = None
     module_id: Optional[int] = None
+    source_state: Optional[int] = None
+    next_state: Optional[int] = None
 
 DEFAULT_MODULES = {
     0: [ActionType.ANALYZE, ActionType.MOVE],

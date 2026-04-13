@@ -29,12 +29,15 @@ class ActionType(Enum):
 class SignalId(Enum):
     AGE = auto()
     ENERGY = auto()
+    CURRENT_STATE = auto()
+    STATE_TICKS = auto()
     WIDTH = auto()
     HEIGHT = auto()
     AREA = auto()
     PREGNANCIES = auto()
     DISTANCE = auto()
     PREV_ACTION = auto()
+    LAST_ACTION_SUCCESS = auto()
     FOOD_COUNT = auto()
     TOXIC_COUNT = auto()
     WALL_COUNT = auto()
@@ -62,4 +65,5 @@ class CompareOp(Enum):
     GT = auto()
 
 MAX_CREATURE_SIZE = 10
+MAX_INTERNAL_STATES = 8
 WORLD_VERSION = "1.0"

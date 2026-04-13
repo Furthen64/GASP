@@ -60,6 +60,14 @@ def mutate(genome, rng, params):
         if r6 < params.mutation_rate * 0.3 and unit.target_type == 'gene':
             from gasp.app.sim.constants import ActionType
             unit.gene = rng.choice(list(ActionType))
+        r7 = rng.random()
+        if r7 < params.mutation_rate * 0.4:
+            from gasp.app.sim.constants import MAX_INTERNAL_STATES
+            unit.source_state = rng.randint(0, MAX_INTERNAL_STATES - 1) if rng.random() < 0.7 else None
+        r8 = rng.random()
+        if r8 < params.mutation_rate * 0.4:
+            from gasp.app.sim.constants import MAX_INTERNAL_STATES
+            unit.next_state = rng.randint(0, MAX_INTERNAL_STATES - 1) if rng.random() < 0.8 else None
         result.append(validate_unit(unit))
         # Duplicate
         if rng.random() < params.mutation_rate * 0.1:

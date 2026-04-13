@@ -1,5 +1,5 @@
 from gasp.app.sim.genetics import Promoter, Unit, DEFAULT_MODULES
-from gasp.app.sim.constants import ActionType, SignalId, CompareOp
+from gasp.app.sim.constants import ActionType, SignalId, CompareOp, MAX_INTERNAL_STATES
 
 
 def _baseline_locomotion_units() -> list[Unit]:
@@ -66,6 +66,115 @@ def _baseline_locomotion_units() -> list[Unit]:
         ),
     ]
 
+
+def _starter_behavior_programs() -> list[list[Unit]]:
+    return [
+        [
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=4.0,
+                ),
+                target_type='gene',
+                gene=ActionType.IDLE,
+                source_state=0,
+                next_state=0,
+            ),
+        ],
+        [
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.CAN_MOVE,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=4.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+                source_state=0,
+                next_state=0,
+            ),
+        ],
+        [
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=4.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+                source_state=0,
+                next_state=1,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=4.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_RIGHT,
+                source_state=1,
+                next_state=0,
+            ),
+        ],
+        [
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=4.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+                source_state=0,
+                next_state=1,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=4.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+                source_state=1,
+                next_state=2,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=4.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+                source_state=2,
+                next_state=3,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=4.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_RIGHT,
+                source_state=3,
+                next_state=0,
+            ),
+        ],
+    ]
+
 def encode_unit(unit: Unit) -> dict:
     return {
         'promoter': {
@@ -77,6 +186,8 @@ def encode_unit(unit: Unit) -> dict:
         'target_type': unit.target_type,
         'gene': unit.gene.name if unit.gene is not None else None,
         'module_id': unit.module_id,
+        'source_state': unit.source_state,
+        'next_state': unit.next_state,
     }
 
 def decode_unit(d: dict) -> Unit:
@@ -98,8 +209,15 @@ def decode_unit(d: dict) -> Unit:
         module_id = d.get('module_id')
         if module_id is not None:
             module_id = int(module_id)
+        source_state = d.get('source_state')
+        if source_state is not None:
+            source_state = int(source_state)
+        next_state = d.get('next_state')
+        if next_state is not None:
+            next_state = int(next_state)
         return validate_unit(Unit(promoter=promoter, target_type=target_type,
-                                  gene=gene, module_id=module_id))
+                                  gene=gene, module_id=module_id,
+                                  source_state=source_state, next_state=next_state))
     except Exception:
         # Return safe default on any error
         return Unit(promoter=Promoter(), gene=ActionType.IDLE)
@@ -116,8 +234,11 @@ def make_random_genome(rng, n_units: int = 8) -> list:
     if n_units <= 0:
         return []
 
-    baseline_units = _baseline_locomotion_units()[:n_units]
-    units = list(baseline_units)
+    if n_units < 4:
+        return list(_baseline_locomotion_units()[:n_units])
+
+    program_units = [validate_unit(unit) for unit in rng.choice(_starter_behavior_programs())]
+    units = list(program_units)
     signal_ids = list(SignalId)
     compare_ops = list(CompareOp)
     action_types = list(ActionType)
@@ -136,6 +257,10 @@ def make_random_genome(rng, n_units: int = 8) -> list:
         else:
             unit = Unit(promoter=promoter, target_type='gene',
                        gene=rng.choice(action_types), module_id=None)
+        if rng.random() < 0.4:
+            unit.source_state = rng.randint(0, MAX_INTERNAL_STATES - 1)
+            if rng.random() < 0.8:
+                unit.next_state = rng.randint(0, MAX_INTERNAL_STATES - 1)
         units.append(unit)
     return units
 
@@ -153,4 +278,8 @@ def validate_unit(unit: Unit) -> Unit:
     if unit.target_type == 'module' and unit.module_id not in DEFAULT_MODULES:
         unit.target_type = 'gene'
         unit.gene = ActionType.IDLE
+    if unit.source_state is not None:
+        unit.source_state = max(0, min(MAX_INTERNAL_STATES - 1, int(unit.source_state)))
+    if unit.next_state is not None:
+        unit.next_state = max(0, min(MAX_INTERNAL_STATES - 1, int(unit.next_state)))
     return unit
