@@ -135,6 +135,72 @@ def test_reproduction_requires_surplus_energy_above_spawn_budget():
     assert do_reproduce(parent, w) is False
     assert w.pending_births == []
 
+def test_mutate_can_inject_stateful_behavior_snippet():
+    params = Parameters(mutation_rate=1.0, genome_max_units=12, internal_state_count=6)
+    rng = RNG(9)
+    genome = [
+        Creature(id=1).chromosome,
+    ][0]
+    if not genome:
+        from gasp.app.sim.genetics import Unit, Promoter
+        from gasp.app.sim.constants import SignalId, CompareOp, ActionType
+        genome = [
+            Unit(
+                promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=0.0, base_strength=1.0),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            )
+        ]
+
+    mutated = mutate(genome, rng, params)
+
+    assert mutated
+    assert len(mutated) <= params.genome_max_units
+    assert any(unit.source_state is not None or unit.next_state is not None for unit in mutated)
+    assert len(mutated) > len(genome)
+
+def test_mutate_respects_internal_state_count_when_injecting_programs():
+    from gasp.app.sim.genetics import Unit, Promoter
+    from gasp.app.sim.constants import SignalId, CompareOp, ActionType
+
+    params = Parameters(mutation_rate=1.0, genome_max_units=10, internal_state_count=2)
+    rng = RNG(11)
+    genome = [
+        Unit(
+            promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=0.0, base_strength=1.0),
+            target_type='gene',
+            gene=ActionType.MOVE,
+        )
+    ]
+
+    mutated = mutate(genome, rng, params)
+
+    for unit in mutated:
+        if unit.source_state is not None:
+            assert unit.source_state < 2
+        if unit.next_state is not None:
+            assert unit.next_state < 2
+
+def test_mutate_biases_toward_locomotion_actions_for_stateful_rules():
+    from gasp.app.sim.genetics import Unit, Promoter
+    from gasp.app.sim.constants import SignalId, CompareOp, ActionType
+
+    params = Parameters(mutation_rate=1.0, genome_max_units=10, internal_state_count=4)
+    rng = RNG(17)
+    genome = [
+        Unit(
+            promoter=Promoter(signal_id=SignalId.ENERGY, compare_op=CompareOp.GT, threshold=0.0, base_strength=1.0),
+            target_type='gene',
+            gene=ActionType.MOVE,
+            source_state=0,
+            next_state=1,
+        )
+    ]
+
+    mutated = mutate(genome, rng, params)
+    locomotion_actions = {'MOVE', 'TURN_LEFT', 'TURN_RIGHT', 'EAT', 'ANALYZE'}
+    assert any(unit.gene and unit.gene.name in locomotion_actions for unit in mutated if unit.target_type == 'gene')
+
 def _make_random_genome(rng, n):
     from gasp.app.sim.genome_codec import make_random_genome
     return make_random_genome(rng, n)

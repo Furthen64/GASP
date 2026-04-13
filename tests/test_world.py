@@ -117,6 +117,7 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.seed_mode == SEED_MODE_RANDOM
     assert params.food_spawn_rate == 0.0001
     assert params.initial_food_count == 102
+    assert params.initial_creature_spawn_min_distance == 8
     assert params.internal_state_count == 4
     assert params.energy_per_food == 50.0
     assert params.move_energy_area_scale == 0.35
@@ -124,7 +125,10 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.epoch_fitness_survival_weight == 0.0
     assert params.epoch_fitness_exploration_weight == 1.0
     assert params.epoch_fitness_food_weight == 25.0
+    assert params.epoch_fitness_program_complexity_weight == 0.75
+    assert params.epoch_fitness_behavior_diversity_weight == 1.0
     assert params.epoch_fitness_move_penalty == 0.0
+    assert params.epoch_fitness_idle_penalty == 4.0
 
 def test_move_energy_cost_scales_with_area():
     params = Parameters(
@@ -267,6 +271,54 @@ def test_epoch_fitness_prefers_exploration_over_turning_in_place():
     )
 
     assert compute_fitness(explorer, params) > compute_fitness(turning, params)
+
+def test_epoch_fitness_penalizes_idle_heavily():
+    params = Parameters(initial_energy=100.0)
+    idler = Creature(
+        id=1,
+        lifetime_ticks=30,
+        energy=90.0,
+        idle_ticks=12,
+        actions_seen=['IDLE'],
+        states_seen=[0],
+        visited_positions=[(2, 2)],
+    )
+    explorer = Creature(
+        id=2,
+        lifetime_ticks=18,
+        energy=55.0,
+        distance_traveled=20.0,
+        food_eaten=1,
+        actions_seen=['MOVE', 'TURN_RIGHT', 'EAT'],
+        states_seen=[0, 1, 2],
+        visited_positions=[(2, 2), (3, 2), (4, 2), (4, 3), (5, 3)],
+    )
+
+    assert compute_fitness(explorer, params) > compute_fitness(idler, params)
+
+def test_initial_creatures_spawn_with_dispersion():
+    params = Parameters(
+        world_width=30,
+        world_height=30,
+        initial_creature_count=8,
+        max_creatures=8,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        initial_creature_spawn_min_distance=8,
+        seed=13,
+        seed_mode=SEED_MODE_FIXED,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    positions = [(creature.x, creature.y) for creature in world.creatures.values() if creature.alive]
+    assert len(positions) == 8
+    for index, cell in enumerate(positions):
+        others = positions[:index] + positions[index + 1:]
+        if others:
+            assert world._distance_to_nearest(cell, others) >= 8
 
 def test_compute_sensed_reports_directional_food_and_space():
     params = Parameters(

@@ -1,7 +1,7 @@
 import pytest
 from gasp.app.sim.genome_codec import (
     encode_unit, decode_unit, encode_genome, decode_genome,
-    make_random_genome, validate_unit
+    make_random_genome, make_behavior_program_snippet, validate_unit
 )
 from gasp.app.sim.genetics import Unit, Promoter
 from gasp.app.sim.constants import ActionType, SignalId, CompareOp
@@ -68,6 +68,19 @@ def test_make_random_genome_respects_param_state_count():
             assert unit.source_state < 2
         if unit.next_state is not None:
             assert unit.next_state < 2
+
+def test_make_behavior_program_snippet_respects_state_budget():
+    from gasp.app.persistence.params_io import Parameters
+
+    snippet = make_behavior_program_snippet(RNG(8), params=Parameters(internal_state_count=3))
+
+    assert snippet
+    assert any(unit.source_state is not None or unit.next_state is not None for unit in snippet)
+    for unit in snippet:
+        if unit.source_state is not None:
+            assert unit.source_state < 3
+        if unit.next_state is not None:
+            assert unit.next_state < 3
 
 def test_validate_unit_clamps_state_indices():
     unit = validate_unit(Unit(

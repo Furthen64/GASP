@@ -22,9 +22,12 @@ def test_creature_to_dict_roundtrip():
     c.toxic_ticks = 2
     c.move_energy_spent = 4.5
     c.straight_move_streak = 6
+    c.idle_ticks = 7
     c.program_state = 3
     c.state_ticks = 4
     c.last_action_success = True
+    c.actions_seen = ['MOVE', 'TURN_RIGHT']
+    c.states_seen = [0, 3]
     c.visited_positions = [(5, 5), (6, 5), (6, 6)]
     d = c.to_dict()
     c2 = Creature.from_dict(d)
@@ -39,9 +42,12 @@ def test_creature_to_dict_roundtrip():
     assert c2.toxic_ticks == 2
     assert c2.move_energy_spent == pytest.approx(4.5)
     assert c2.straight_move_streak == 6
+    assert c2.idle_ticks == 7
     assert c2.program_state == 3
     assert c2.state_ticks == 4
     assert c2.last_action_success is True
+    assert c2.actions_seen == ['MOVE', 'TURN_RIGHT']
+    assert c2.states_seen == [0, 3]
     assert c2.visited_positions == [(5, 5), (6, 5), (6, 6)]
 
 def test_creature_age_increments(world):

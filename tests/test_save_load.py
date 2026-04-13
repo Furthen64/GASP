@@ -54,9 +54,12 @@ def test_save_load_gamestate():
     assert loaded.toxic_ticks == original.toxic_ticks
     assert loaded.move_energy_spent == original.move_energy_spent
     assert loaded.straight_move_streak == original.straight_move_streak
+    assert loaded.idle_ticks == original.idle_ticks
     assert loaded.program_state == original.program_state
     assert loaded.state_ticks == original.state_ticks
     assert loaded.last_action_success == original.last_action_success
+    assert loaded.actions_seen == original.actions_seen
+    assert loaded.states_seen == original.states_seen
     assert loaded.visited_positions == original.visited_positions
 
 def test_rng_state_preserved():

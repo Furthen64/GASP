@@ -27,8 +27,11 @@ class Creature:
     toxic_ticks: int = 0
     move_energy_spent: float = 0.0
     straight_move_streak: int = 0
+    idle_ticks: int = 0
     program_state: int = 0
     state_ticks: int = 0
+    actions_seen: list = field(default_factory=list)
+    states_seen: list = field(default_factory=list)
     visited_positions: list = field(default_factory=list)
     sensed: dict = field(default_factory=dict)
     action_log: list = field(default_factory=list)
@@ -66,8 +69,11 @@ class Creature:
             'toxic_ticks': self.toxic_ticks,
             'move_energy_spent': self.move_energy_spent,
             'straight_move_streak': self.straight_move_streak,
+            'idle_ticks': self.idle_ticks,
             'program_state': self.program_state,
             'state_ticks': self.state_ticks,
+            'actions_seen': self.actions_seen,
+            'states_seen': self.states_seen,
             'visited_positions': [list(pos) for pos in self.visited_positions],
             'sensed': self.sensed,
             'action_log': self.action_log,
@@ -101,8 +107,13 @@ class Creature:
         c.toxic_ticks = d.get('toxic_ticks', 0)
         c.move_energy_spent = d.get('move_energy_spent', 0.0)
         c.straight_move_streak = d.get('straight_move_streak', 0)
+        c.idle_ticks = d.get('idle_ticks', 0)
         c.program_state = d.get('program_state', 0)
         c.state_ticks = d.get('state_ticks', 0)
+        c.actions_seen = list(d.get('actions_seen', []))
+        c.states_seen = list(d.get('states_seen', []))
+        if not c.states_seen:
+            c.states_seen = [c.program_state]
         c.visited_positions = [tuple(pos) for pos in d.get('visited_positions', [])]
         if not c.visited_positions:
             c.visited_positions = [(c.x, c.y)]
@@ -135,5 +146,6 @@ def make_creature(rng, params, birth_step=0, x=1, y=1, parent_ids=None, generati
         energy=params.initial_energy,
         chromosome=genome,
         debug_color=color,
+        states_seen=[0],
         visited_positions=[(x, y)],
     )

@@ -1,3 +1,5 @@
+import copy
+
 from gasp.app.sim.genetics import Promoter, Unit, DEFAULT_MODULES
 from gasp.app.sim.constants import ActionType, SignalId, CompareOp, MAX_INTERNAL_STATES
 
@@ -184,6 +186,35 @@ def _starter_behavior_programs(state_count: int) -> list[list[Unit]]:
             valid_programs.append(program)
     return valid_programs or [programs[0]]
 
+
+def make_behavior_program_snippet(rng, params=None) -> list[Unit]:
+    state_count = MAX_INTERNAL_STATES if params is None else params.clamped_internal_state_count()
+    template = copy.deepcopy(rng.choice(_starter_behavior_programs(state_count)))
+
+    used_states = sorted({
+        state
+        for unit in template
+        for state in (unit.source_state, unit.next_state)
+        if state is not None
+    })
+    available_states = list(range(state_count))
+    rng.shuffle(available_states)
+    state_map = {
+        old_state: available_states[index % len(available_states)]
+        for index, old_state in enumerate(used_states)
+    }
+
+    snippet = []
+    for unit in template:
+        new_unit = copy.deepcopy(unit)
+        if new_unit.source_state is not None:
+            new_unit.source_state = state_map[new_unit.source_state]
+        if new_unit.next_state is not None:
+            new_unit.next_state = state_map[new_unit.next_state]
+        new_unit.promoter.base_strength = max(0.5, min(10.0, new_unit.promoter.base_strength + ((rng.random() - 0.5) * 1.5)))
+        snippet.append(validate_unit(new_unit, state_count=state_count))
+    return snippet
+
 def encode_unit(unit: Unit) -> dict:
     return {
         'promoter': {
@@ -248,7 +279,7 @@ def make_random_genome(rng, n_units: int = 8, params=None) -> list:
     if n_units < 4:
         return list(_baseline_locomotion_units()[:n_units])
 
-    program_units = [validate_unit(unit, state_count=state_count) for unit in rng.choice(_starter_behavior_programs(state_count))]
+    program_units = make_behavior_program_snippet(rng, params=params)
     units = list(program_units)
     signal_ids = list(SignalId)
     compare_ops = list(CompareOp)

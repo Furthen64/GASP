@@ -52,29 +52,16 @@ class World:
             self.terrain[(self.width - 1, y)] = CellType.BORDER
 
         # Seed creatures
-        positions = [
-            (2, 2), (self.width - 3, 2),
-            (2, self.height - 3), (self.width - 3, self.height - 3)
-        ]
         initial_creatures = min(self.params.initial_creature_count, self.params.max_creatures)
         templates = list(seed_creatures or [])[:initial_creatures]
-        for i in range(initial_creatures):
-            px, py = positions[i % len(positions)]
-            spawned = False
-            for dx in range(5):
-                for dy in range(5):
-                    tx, ty = px + dx, py + dy
-                    if self.is_cell_movable_to(tx, ty):
-                        if i < len(templates):
-                            creature = self._spawn_epoch_creature(templates[i], tx, ty)
-                        else:
-                            creature = make_creature(self.rng, self.params, birth_step=0, x=tx, y=ty)
-                        self.creatures[creature.id] = creature
-                        self.invalidate_spatial_index()
-                        spawned = True
-                        break
-                if spawned:
-                    break
+        spawn_cells = self._choose_initial_spawn_cells(initial_creatures)
+        for index, (tx, ty) in enumerate(spawn_cells):
+            if index < len(templates):
+                creature = self._spawn_epoch_creature(templates[index], tx, ty)
+            else:
+                creature = make_creature(self.rng, self.params, birth_step=0, x=tx, y=ty)
+            self.creatures[creature.id] = creature
+            self.invalidate_spatial_index()
         self.invalidate_spatial_index()
 
         # Initial food and toxic
@@ -103,8 +90,47 @@ class World:
             energy=self.params.initial_energy,
             chromosome=copy.deepcopy(template.chromosome),
             debug_color=template.debug_color,
+            states_seen=[0],
             visited_positions=[(x, y)],
         )
+
+    def _preferred_spawn_cells(self):
+        return [
+            (2, 2),
+            (self.width - 3, 2),
+            (2, self.height - 3),
+            (self.width - 3, self.height - 3),
+            (self.width // 2, self.height // 2),
+            (self.width // 2, 2),
+            (self.width // 2, self.height - 3),
+            (2, self.height // 2),
+            (self.width - 3, self.height // 2),
+        ]
+
+    def _choose_initial_spawn_cells(self, count):
+        if count <= 0:
+            return []
+        free_cells = self._free_ground_cells()
+        self.rng.shuffle(free_cells)
+        candidates = []
+        seen = set()
+        for cell in self._preferred_spawn_cells() + free_cells:
+            if cell in seen:
+                continue
+            if self.get_cell_type(*cell) != CellType.GROUND:
+                continue
+            seen.add(cell)
+            candidates.append(cell)
+
+        requested_distance = max(0, int(getattr(self.params, 'initial_creature_spawn_min_distance', 0)))
+        for min_distance in range(requested_distance, -1, -1):
+            selected = []
+            for cell in candidates:
+                if all(self._distance_to_nearest(cell, [other]) >= min_distance for other in selected):
+                    selected.append(cell)
+                    if len(selected) >= count:
+                        return selected
+        return candidates[:count]
 
     def living_creature_count(self):
         return sum(1 for creature in self.creatures.values() if creature.alive)
@@ -450,6 +476,8 @@ class World:
 
     def _record_action_outcome(self, creature, action: ActionType, success: bool, next_state: int | None):
         creature.last_action_success = success
+        if action.name not in creature.actions_seen:
+            creature.actions_seen.append(action.name)
         if next_state is not None:
             if creature.program_state == next_state:
                 creature.state_ticks += 1
@@ -458,6 +486,11 @@ class World:
                 creature.state_ticks = 0
         else:
             creature.state_ticks += 1
+        if creature.program_state not in creature.states_seen:
+            creature.states_seen.append(creature.program_state)
+
+        if action == ActionType.IDLE and success:
+            creature.idle_ticks += 1
 
         if action == ActionType.MOVE and success:
             creature.straight_move_streak += 1
