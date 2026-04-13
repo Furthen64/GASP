@@ -522,6 +522,61 @@ def test_stagnation_nudge_pushes_creature_to_try_different_action():
     assert action == ActionType.TURN_LEFT
     assert selected_unit_index == 1
 
+def test_stagnation_fallback_breaks_idle_only_loop():
+    params = Parameters(
+        world_width=5,
+        world_height=5,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        runtime_stagnation_window=5,
+        runtime_stagnation_reward_threshold=0.0,
+        runtime_stagnation_nudge=1.5,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=3,
+        y=2,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(3, 2)],
+        sensed={'can_move_forward': 0, 'can_eat': 0, 'can_reproduce': 0},
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.IDLE,
+            )
+        ],
+        reward_history=[-0.5, -0.2, 0.0, -0.1, -0.3],
+        action_log=[
+            {'step': 1, 'action': 'IDLE', 'success': True},
+            {'step': 2, 'action': 'IDLE', 'success': True},
+            {'step': 3, 'action': 'IDLE', 'success': True},
+            {'step': 4, 'action': 'IDLE', 'success': True},
+            {'step': 5, 'action': 'IDLE', 'success': True},
+        ],
+        last_action=ActionType.IDLE,
+    )
+
+    action, next_state, selected_unit_index = world._evaluate_genome(creature)
+
+    assert action in (ActionType.TURN_LEFT, ActionType.TURN_RIGHT, ActionType.ANALYZE)
+    assert action != ActionType.IDLE
+    assert next_state is None
+    assert selected_unit_index is None
+
 def test_epoch_fitness_rewards_mixed_outcomes():
     params = Parameters(initial_energy=100.0)
     explorer = Creature(

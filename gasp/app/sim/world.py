@@ -513,6 +513,63 @@ class World:
         recent_actions = creature.action_log[-window:]
         return True, recent_rewards, recent_actions
 
+    def _stagnation_fallback_candidates(self, creature) -> list[ActionType]:
+        if bool(creature.sensed.get('can_move_forward', 0)):
+            preferred = [
+                ActionType.MOVE,
+                ActionType.TURN_LEFT,
+                ActionType.TURN_RIGHT,
+                ActionType.EAT,
+                ActionType.ANALYZE,
+            ]
+        else:
+            preferred = [
+                ActionType.TURN_LEFT,
+                ActionType.TURN_RIGHT,
+                ActionType.EAT,
+                ActionType.ANALYZE,
+                ActionType.MOVE,
+            ]
+        return preferred + [
+            ActionType.REPRODUCE,
+            ActionType.GROW_N,
+            ActionType.GROW_E,
+            ActionType.GROW_S,
+            ActionType.GROW_W,
+            ActionType.IDLE,
+        ]
+
+    def _choose_stagnation_fallback_action(self, creature, current_action: ActionType, recent_action_names: list[str]) -> ActionType | None:
+        repeated_actions = set(recent_action_names)
+        for action in self._stagnation_fallback_candidates(creature):
+            if action == current_action:
+                continue
+            if action.name in repeated_actions:
+                continue
+            if self._is_action_feasible(creature, action):
+                return action
+        for action in self._stagnation_fallback_candidates(creature):
+            if action == current_action:
+                continue
+            if self._is_action_feasible(creature, action):
+                return action
+        return None
+
+    def _maybe_override_stagnating_action(self, creature, action: ActionType, next_state: int | None, unit_index: int | None):
+        is_stagnating, _recent_rewards, recent_actions = self._recent_reward_stagnation(creature)
+        if not is_stagnating:
+            return action, next_state, unit_index
+
+        recent_action_names = [entry.get('action') for entry in recent_actions]
+        repeat_count = recent_action_names.count(action.name)
+        if action != ActionType.IDLE and repeat_count < max(3, len(recent_action_names) - 1):
+            return action, next_state, unit_index
+
+        fallback = self._choose_stagnation_fallback_action(creature, action, recent_action_names)
+        if fallback is None:
+            return action, next_state, unit_index
+        return fallback, None, None
+
     def _stagnation_action_adjustment(self, creature, action: ActionType) -> float:
         is_stagnating, _recent_rewards, recent_actions = self._recent_reward_stagnation(creature)
         if not is_stagnating:
@@ -621,18 +678,18 @@ class World:
     def _evaluate_genome(self, creature) -> tuple[ActionType, int | None, int | None]:
         """Return the highest-scoring action that is currently feasible."""
         if self._creature_has_stateful_rules(creature):
-            return self._select_stateful_rule(creature)
+            return self._maybe_override_stagnating_action(creature, *self._select_stateful_rule(creature))
 
         action_scores = self._score_legacy_actions(creature)
 
         if not action_scores:
-            return ActionType.IDLE, None, None
+            return self._maybe_override_stagnating_action(creature, ActionType.IDLE, None, None)
 
         ranked_actions = sorted(action_scores.items(), key=lambda item: item[1][0], reverse=True)
         for action, (_score, unit_index) in ranked_actions:
             if self._is_action_feasible(creature, action):
-                return action, None, unit_index
-        return ActionType.IDLE, None, None
+                return self._maybe_override_stagnating_action(creature, action, None, unit_index)
+        return self._maybe_override_stagnating_action(creature, ActionType.IDLE, None, None)
 
     def _compute_runtime_reward(
         self,
