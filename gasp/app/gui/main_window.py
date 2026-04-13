@@ -24,8 +24,8 @@ class MainWindow(QMainWindow):
         self.world = self._create_world()
         self.ui_timings = RollingTimingWindow()
         self._selected_creature = None
-        self._epoch_lifespan_enabled = False
-        self._epoch_lifespan_seconds = 0
+        self._epoch_lifespan_enabled = True
+        self._epoch_lifespan_seconds = 10
         self._epoch_started_at = perf_counter()
         self._setup_ui()
         self._setup_timer()

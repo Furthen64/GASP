@@ -106,21 +106,22 @@ def test_random_seed_mode_generates_new_seed_values():
     assert 0 <= second <= 2_147_483_647
     assert first != second
 
-def test_default_parameters_favor_small_randomized_runs():
+def test_default_parameters_favor_sparse_epoch_runs():
     params = Parameters()
 
-    assert params.world_width == 64
-    assert params.world_height == 42
+    assert params.world_width == 80
+    assert params.world_height == 64
     assert params.initial_creature_count == 8
-    assert params.max_creatures == 10
+    assert params.max_creatures == 25
     assert params.seed_mode == SEED_MODE_RANDOM
-    assert params.food_spawn_rate == 0.002
-    assert params.initial_food_count == 40
+    assert params.food_spawn_rate == 0.0
+    assert params.initial_food_count == 102
     assert params.energy_per_food == 50.0
     assert params.move_energy_area_scale == 0.35
     assert params.epoch_fitness_reproduction_weight == 8.0
-    assert params.epoch_fitness_survival_weight == 0.35
-    assert params.epoch_fitness_exploration_weight == 2.5
+    assert params.epoch_fitness_survival_weight == 0.0
+    assert params.epoch_fitness_exploration_weight == 1.0
+    assert params.epoch_fitness_food_weight == 25.0
 
 def test_move_energy_cost_scales_with_area():
     params = Parameters(
