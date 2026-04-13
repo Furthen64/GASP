@@ -51,10 +51,6 @@ class World:
             self.terrain[(0, y)] = CellType.BORDER
             self.terrain[(self.width - 1, y)] = CellType.BORDER
 
-        # Initial food and toxic
-        self.add_food(self.params.initial_food_count)
-        self.add_toxic(self.params.initial_toxic_count)
-
         # Seed creatures
         positions = [
             (2, 2), (self.width - 3, 2),
@@ -80,6 +76,16 @@ class World:
                 if spawned:
                     break
         self.invalidate_spatial_index()
+
+        # Initial food and toxic
+        initial_spawn_cells = {(creature.x, creature.y) for creature in self.creatures.values() if creature.alive}
+        min_food_distance = max(0, int(getattr(self.params, 'initial_food_min_distance_from_creatures', 0)))
+        self.add_food(
+            self.params.initial_food_count,
+            avoid_cells=initial_spawn_cells,
+            min_distance=min_food_distance,
+        )
+        self.add_toxic(self.params.initial_toxic_count)
 
     def _spawn_epoch_creature(self, template, x, y):
         from gasp.app.util.ids import CREATURE_ID_GEN
@@ -179,9 +185,14 @@ class World:
         self._creature_count_at_index = len(self.creatures)
         self._spatial_index_dirty = False
 
-    def add_food(self, n):
+    def add_food(self, n, avoid_cells=None, min_distance=0):
         """Spawn n food cells on free ground."""
         free_cells = self._free_ground_cells()
+        if avoid_cells and min_distance > 0:
+            free_cells = [
+                cell for cell in free_cells
+                if self._distance_to_nearest(cell, avoid_cells) >= min_distance
+            ]
         self.rng.shuffle(free_cells)
         placed = 0
         for cell in free_cells:
@@ -189,6 +200,12 @@ class World:
                 break
             self.food_cells.add(cell)
             placed += 1
+
+    def _distance_to_nearest(self, cell, others):
+        if not others:
+            return float('inf')
+        x, y = cell
+        return min(abs(x - ox) + abs(y - oy) for ox, oy in others)
 
     def add_toxic(self, n):
         """Spawn n toxic cells on free ground."""
