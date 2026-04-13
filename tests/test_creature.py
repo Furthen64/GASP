@@ -29,6 +29,11 @@ def test_creature_to_dict_roundtrip():
     c.actions_seen = ['MOVE', 'TURN_RIGHT']
     c.states_seen = [0, 3]
     c.visited_positions = [(5, 5), (6, 5), (6, 6)]
+    c.learned_biases = [0.5, -0.25]
+    c.reward_history = [1.2, -0.4, 0.8]
+    c.reward_trace = 1.75
+    c.last_reward = -0.4
+    c.blocked_forward_ticks = 2
     d = c.to_dict()
     c2 = Creature.from_dict(d)
     assert c2.id == c.id
@@ -49,6 +54,11 @@ def test_creature_to_dict_roundtrip():
     assert c2.actions_seen == ['MOVE', 'TURN_RIGHT']
     assert c2.states_seen == [0, 3]
     assert c2.visited_positions == [(5, 5), (6, 5), (6, 6)]
+    assert c2.learned_biases == pytest.approx([0.5, -0.25])
+    assert c2.reward_history == pytest.approx([1.2, -0.4, 0.8])
+    assert c2.reward_trace == pytest.approx(1.75)
+    assert c2.last_reward == pytest.approx(-0.4)
+    assert c2.blocked_forward_ticks == 2
 
 def test_creature_age_increments(world):
     w = world

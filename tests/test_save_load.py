@@ -61,6 +61,11 @@ def test_save_load_gamestate():
     assert loaded.actions_seen == original.actions_seen
     assert loaded.states_seen == original.states_seen
     assert loaded.visited_positions == original.visited_positions
+    assert loaded.learned_biases == original.learned_biases
+    assert loaded.reward_history == original.reward_history
+    assert loaded.reward_trace == original.reward_trace
+    assert loaded.last_reward == original.last_reward
+    assert loaded.blocked_forward_ticks == original.blocked_forward_ticks
 
 def test_rng_state_preserved():
     CREATURE_ID_GEN.reset(0)

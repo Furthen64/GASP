@@ -271,6 +271,23 @@ class DebugPanel(QWidget):
         super().__init__(parent)
         self._setup_ui()
 
+    def _rule_bias_text(self, creature) -> str:
+        if not creature.learned_biases:
+            return "-"
+        ranked = sorted(
+            enumerate(creature.learned_biases),
+            key=lambda item: abs(item[1]),
+            reverse=True,
+        )
+        parts = []
+        for index, bias in ranked[:2]:
+            if abs(bias) < 0.05 or index >= len(creature.chromosome):
+                continue
+            unit = creature.chromosome[index]
+            target = unit.gene.name if unit.target_type == 'gene' and unit.gene else f"MOD{unit.module_id}"
+            parts.append(f"[{index}] {target}: {bias:+.2f}")
+        return " | ".join(parts) if parts else "-"
+
     def _setup_ui(self):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
@@ -285,7 +302,8 @@ class DebugPanel(QWidget):
         info_form = QFormLayout(info_group)
         self._labels = {}
         for field in ['ID', 'Generation', 'Age', 'Position', 'Size', 'Facing',
-                      'Energy', 'Pregnancies', 'Epoch Score', 'Distance', 'Food Eaten',
+                      'Energy', 'Pregnancies', 'Epoch Score', 'Last Reward', 'Reward Trace',
+                      'Rule Bias', 'Distance', 'Food Eaten',
                       'Unique Positions', 'Toxic Ticks', 'Move Cost', 'Move Energy', 'Action']:
             lbl = QLabel("-")
             info_form.addRow(f"{field}:", lbl)
@@ -336,12 +354,14 @@ class DebugPanel(QWidget):
         chrom_layout.addWidget(self._chrom_text)
         self._layout.addWidget(chrom_group)
 
-        # Epoch score graph
+        # Runtime reward graph
         if HAS_PYQTGRAPH:
-            graph_group = QGroupBox("Epoch Score Trend")
+            graph_group = QGroupBox("Runtime Reward Trend")
             graph_layout = QVBoxLayout(graph_group)
             self._plot_widget = pg.PlotWidget()
             self._plot_widget.setMaximumHeight(150)
+            self._plot_widget.setLabel('left', 'Reward')
+            self._plot_widget.setLabel('bottom', 'Tick')
             graph_layout.addWidget(self._plot_widget)
             self._layout.addWidget(graph_group)
         else:
@@ -380,6 +400,9 @@ class DebugPanel(QWidget):
         self._labels['Energy'].setText(f"{creature.energy:.1f}")
         self._labels['Pregnancies'].setText(str(creature.pregnancies_completed))
         self._labels['Epoch Score'].setText(f"{compute_fitness(creature, world.params):.2f} (estimate)")
+        self._labels['Last Reward'].setText(f"{creature.last_reward:+.2f}")
+        self._labels['Reward Trace'].setText(f"{creature.reward_trace:+.2f}")
+        self._labels['Rule Bias'].setText(self._rule_bias_text(creature))
         self._labels['Distance'].setText(f"{creature.distance_traveled:.2f}")
         self._labels['Food Eaten'].setText(str(creature.food_eaten))
         self._labels['Unique Positions'].setText(str(len({tuple(pos) for pos in creature.visited_positions})))
@@ -424,7 +447,7 @@ class DebugPanel(QWidget):
             )
         self._chrom_text.setText("\n".join(chrom_lines))
 
-        # Epoch score graph
-        if self._plot_widget and creature.fitness_history:
+        # Runtime reward graph
+        if self._plot_widget and creature.reward_history:
             self._plot_widget.clear()
-            self._plot_widget.plot(creature.fitness_history, pen='b')
+            self._plot_widget.plot(creature.reward_history, pen=pg.mkPen('#44c9d6', width=2))

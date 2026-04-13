@@ -1,4 +1,5 @@
 import copy
+from math import sqrt
 from time import perf_counter
 
 from gasp.app.sim.constants import CellType, Facing, ActionType, SignalId, CompareOp
@@ -379,8 +380,9 @@ class World:
         return False
 
     def _matching_units(self, creature, include_stateful: bool | None) -> list:
+        self._ensure_runtime_learning_state(creature)
         units = []
-        for unit in creature.chromosome:
+        for index, unit in enumerate(creature.chromosome):
             is_stateful = unit.source_state is not None or unit.next_state is not None
             if include_stateful is True and not is_stateful:
                 continue
@@ -391,37 +393,56 @@ class World:
             signal_value = self._get_signal_value(creature, unit.promoter.signal_id)
             if not self._compare_signal(signal_value, unit.promoter.compare_op, unit.promoter.threshold):
                 continue
-            units.append(unit)
+            units.append((index, unit))
         return units
 
-    def _select_stateful_rule(self, creature) -> tuple[ActionType, int | None]:
+    def _ensure_runtime_learning_state(self, creature):
+        bias_count = len(creature.chromosome)
+        current = list(getattr(creature, 'learned_biases', []))
+        if len(current) < bias_count:
+            current.extend([0.0] * (bias_count - len(current)))
+        elif len(current) > bias_count:
+            current = current[:bias_count]
+        creature.learned_biases = current
+
+    def _unit_runtime_strength(self, creature, unit_index: int, unit) -> float:
+        self._ensure_runtime_learning_state(creature)
+        return unit.promoter.base_strength + creature.learned_biases[unit_index]
+
+    def _select_stateful_rule(self, creature) -> tuple[ActionType, int | None, int | None]:
         matching_units = self._matching_units(creature, include_stateful=True)
         if not matching_units:
-            return ActionType.IDLE, None
+            return ActionType.IDLE, None, None
 
-        matching_units.sort(key=lambda unit: unit.promoter.base_strength, reverse=True)
-        for unit in matching_units:
+        matching_units.sort(
+            key=lambda item: self._unit_runtime_strength(creature, item[0], item[1]),
+            reverse=True,
+        )
+        for unit_index, unit in matching_units:
             if unit.target_type == 'gene' and unit.gene is not None and self._is_action_feasible(creature, unit.gene):
-                return unit.gene, unit.next_state
+                return unit.gene, unit.next_state, unit_index
             if unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
                 for action in DEFAULT_MODULES[unit.module_id]:
                     if self._is_action_feasible(creature, action):
-                        return action, unit.next_state
-        return ActionType.IDLE, None
+                        return action, unit.next_state, unit_index
+        return ActionType.IDLE, None, None
 
-    def _score_legacy_actions(self, creature) -> dict[ActionType, float]:
+    def _score_legacy_actions(self, creature) -> dict[ActionType, tuple[float, int | None]]:
         """Evaluate legacy reactive chromosomes and return accumulated action scores."""
-        sensed = creature.sensed
         action_scores = {}
-        for unit in self._matching_units(creature, include_stateful=False):
-            score = unit.promoter.base_strength
+        for unit_index, unit in self._matching_units(creature, include_stateful=False):
+            score = self._unit_runtime_strength(creature, unit_index, unit)
             if unit.target_type == 'gene' and unit.gene is not None:
-                action_scores[unit.gene] = action_scores.get(unit.gene, 0.0) + score
+                current_score, current_unit_index = action_scores.get(unit.gene, (0.0, None))
+                next_unit_index = unit_index if current_unit_index is None or score >= current_score else current_unit_index
+                action_scores[unit.gene] = (current_score + score, next_unit_index)
             elif unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
                 module_actions = DEFAULT_MODULES[unit.module_id]
                 per_action = score / len(module_actions)
                 for at in module_actions:
-                    action_scores[at] = action_scores.get(at, 0.0) + per_action
+                    current_score, current_unit_index = action_scores.get(at, (0.0, None))
+                    next_unit_index = unit_index if current_unit_index is None or per_action >= current_score else current_unit_index
+                    action_scores[at] = (current_score + per_action, next_unit_index)
         return action_scores
 
     def _creature_has_stateful_rules(self, creature) -> bool:
@@ -458,7 +479,7 @@ class World:
             return bool(creature.sensed.get('can_eat', 0))
         return True
 
-    def _evaluate_genome(self, creature) -> tuple[ActionType, int | None]:
+    def _evaluate_genome(self, creature) -> tuple[ActionType, int | None, int | None]:
         """Return the highest-scoring action that is currently feasible."""
         if self._creature_has_stateful_rules(creature):
             return self._select_stateful_rule(creature)
@@ -466,13 +487,64 @@ class World:
         action_scores = self._score_legacy_actions(creature)
 
         if not action_scores:
-            return ActionType.IDLE, None
+            return ActionType.IDLE, None, None
 
-        ranked_actions = sorted(action_scores.items(), key=lambda item: item[1], reverse=True)
-        for action, _score in ranked_actions:
+        ranked_actions = sorted(action_scores.items(), key=lambda item: item[1][0], reverse=True)
+        for action, (_score, unit_index) in ranked_actions:
             if self._is_action_feasible(creature, action):
-                return action, None
-        return ActionType.IDLE, None
+                return action, None, unit_index
+        return ActionType.IDLE, None, None
+
+    def _compute_runtime_reward(
+        self,
+        creature,
+        action: ActionType,
+        success: bool,
+        discovered_new_position: bool,
+        start_food_eaten: int,
+        start_pregnancies: int,
+        blocked_forward: bool,
+        toxic_hit: bool,
+    ) -> float:
+        reward = 0.0
+        if success:
+            reward += self.params.runtime_reward_action_success
+        else:
+            reward -= self.params.runtime_penalty_failed_action
+
+        if action == ActionType.IDLE:
+            reward -= self.params.runtime_penalty_idle
+            if blocked_forward:
+                reward -= self.params.runtime_penalty_blocked_idle * sqrt(max(1, creature.blocked_forward_ticks))
+
+        if creature.food_eaten > start_food_eaten:
+            reward += (creature.food_eaten - start_food_eaten) * self.params.runtime_reward_food
+
+        if creature.pregnancies_completed > start_pregnancies:
+            reward += (creature.pregnancies_completed - start_pregnancies) * self.params.runtime_reward_reproduce
+
+        if discovered_new_position:
+            reward += self.params.runtime_reward_new_cell
+
+        if toxic_hit:
+            reward -= self.params.runtime_penalty_toxic
+
+        return reward
+
+    def _apply_runtime_learning(self, creature, unit_index: int | None, reward: float):
+        self._ensure_runtime_learning_state(creature)
+        decay = max(0.0, min(1.0, float(self.params.runtime_learning_decay)))
+        creature.learned_biases = [bias * decay for bias in creature.learned_biases]
+        creature.last_reward = reward
+        creature.reward_trace = creature.reward_trace * decay + reward
+        creature.reward_history.append(reward)
+        if len(creature.reward_history) > 200:
+            creature.reward_history.pop(0)
+        if unit_index is None or not creature.learned_biases:
+            return
+        learning_rate = max(0.0, float(self.params.runtime_learning_rate))
+        updated_bias = creature.learned_biases[unit_index] + reward * learning_rate
+        creature.learned_biases[unit_index] = max(-6.0, min(6.0, updated_bias))
 
     def _record_action_outcome(self, creature, action: ActionType, success: bool, next_state: int | None):
         creature.last_action_success = success
@@ -491,6 +563,12 @@ class World:
 
         if action == ActionType.IDLE and success:
             creature.idle_ticks += 1
+
+        blocked_forward = not bool(creature.sensed.get('can_move_forward', 0))
+        if blocked_forward and action == ActionType.IDLE:
+            creature.blocked_forward_ticks += 1
+        elif action in (ActionType.TURN_LEFT, ActionType.TURN_RIGHT) or not blocked_forward:
+            creature.blocked_forward_ticks = 0
 
         if action == ActionType.MOVE and success:
             creature.straight_move_streak += 1
@@ -558,16 +636,21 @@ class World:
 
             # c/d. evaluate chromosome -> get best action
             phase_start = perf_counter()
-            action, next_state = self._evaluate_genome(creature)
+            action, next_state, selected_unit_index = self._evaluate_genome(creature)
             evaluate_ms += (perf_counter() - phase_start) * 1000.0
 
             # e. execute action
             phase_start = perf_counter()
+            start_position = (creature.x, creature.y)
+            start_food_eaten = creature.food_eaten
+            start_pregnancies = creature.pregnancies_completed
+            blocked_forward = not bool(creature.sensed.get('can_move_forward', 0))
             success = execute_action(action, creature, self)
             self._record_action_outcome(creature, action, success, next_state)
             creature.last_action = action
             creature.log_action(self.step, action.name, success)
             current_position = (creature.x, creature.y)
+            discovered_new_position = current_position not in creature.visited_positions
             if current_position not in creature.visited_positions:
                 creature.visited_positions.append(current_position)
             action_ms += (perf_counter() - phase_start) * 1000.0
@@ -581,9 +664,22 @@ class World:
             # Check toxic
             phase_start = perf_counter()
             my_cells = rect_cells(creature.x, creature.y, creature.width, creature.height)
+            toxic_hit = False
             if my_cells & self.toxic_cells:
                 creature.toxic_ticks += 1
                 creature.energy -= 5.0  # Toxic damage
+                toxic_hit = True
+            reward = self._compute_runtime_reward(
+                creature,
+                action,
+                success,
+                discovered_new_position,
+                start_food_eaten,
+                start_pregnancies,
+                blocked_forward,
+                toxic_hit,
+            )
+            self._apply_runtime_learning(creature, selected_unit_index, reward)
             fitness_estimate = compute_fitness(creature, self.params)
             creature.fitness_history.append(fitness_estimate)
             if len(creature.fitness_history) > 200:

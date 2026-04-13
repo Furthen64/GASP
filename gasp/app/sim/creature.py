@@ -39,6 +39,11 @@ class Creature:
     debug_color: tuple = (128, 128, 255)
     selected: bool = False
     fitness_history: list = field(default_factory=list)
+    learned_biases: list = field(default_factory=list)
+    reward_history: list = field(default_factory=list)
+    reward_trace: float = 0.0
+    last_reward: float = 0.0
+    blocked_forward_ticks: int = 0
     last_action: Optional[ActionType] = None
     last_action_success: bool = False
 
@@ -81,6 +86,11 @@ class Creature:
             'debug_color': list(self.debug_color),
             'selected': self.selected,
             'fitness_history': self.fitness_history,
+            'learned_biases': self.learned_biases,
+            'reward_history': self.reward_history,
+            'reward_trace': self.reward_trace,
+            'last_reward': self.last_reward,
+            'blocked_forward_ticks': self.blocked_forward_ticks,
             'last_action': self.last_action.name if self.last_action else None,
             'last_action_success': self.last_action_success,
         }
@@ -124,6 +134,11 @@ class Creature:
         c.debug_color = tuple(dc)
         c.selected = d.get('selected', False)
         c.fitness_history = d.get('fitness_history', [])
+        c.learned_biases = list(d.get('learned_biases', []))
+        c.reward_history = list(d.get('reward_history', []))
+        c.reward_trace = d.get('reward_trace', 0.0)
+        c.last_reward = d.get('last_reward', 0.0)
+        c.blocked_forward_ticks = d.get('blocked_forward_ticks', 0)
         la = d.get('last_action')
         c.last_action = ActionType[la] if la else None
         c.last_action_success = d.get('last_action_success', False)

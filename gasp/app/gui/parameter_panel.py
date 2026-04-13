@@ -51,7 +51,13 @@ class ParameterPanel(QWidget):
                         'epoch_fitness_exploration_weight', 'epoch_fitness_efficiency_weight',
                         'epoch_fitness_food_weight', 'epoch_fitness_program_complexity_weight',
                         'epoch_fitness_behavior_diversity_weight', 'epoch_fitness_toxic_penalty',
-                        'epoch_fitness_move_penalty', 'epoch_fitness_idle_penalty']
+                        'epoch_fitness_move_penalty', 'epoch_fitness_idle_penalty',
+                        'runtime_learning_rate', 'runtime_learning_decay',
+                        'runtime_reward_action_success', 'runtime_reward_food',
+                        'runtime_reward_new_cell', 'runtime_reward_reproduce',
+                        'runtime_penalty_failed_action', 'runtime_penalty_idle',
+                        'runtime_penalty_blocked_idle',
+                        'runtime_penalty_toxic']
 
         for name in int_params:
             val = getattr(self.params, name)

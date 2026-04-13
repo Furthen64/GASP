@@ -129,6 +129,11 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.epoch_fitness_behavior_diversity_weight == 1.0
     assert params.epoch_fitness_move_penalty == 0.0
     assert params.epoch_fitness_idle_penalty == 4.0
+    assert params.runtime_learning_rate == 0.4
+    assert params.runtime_learning_decay == 0.92
+    assert params.runtime_reward_food == 5.0
+    assert params.runtime_penalty_failed_action == 1.4
+    assert params.runtime_penalty_blocked_idle == 1.2
 
 def test_move_energy_cost_scales_with_area():
     params = Parameters(
@@ -220,6 +225,132 @@ def test_moving_over_food_grants_immediate_epoch_fitness():
     )
     assert after >= before + params.epoch_fitness_food_weight
     assert mover.fitness_history[-1] == pytest.approx(after)
+    assert mover.last_reward > 0.0
+    assert mover.learned_biases[0] > 0.0
+
+def test_runtime_learning_penalizes_idle_rule_and_switches_action():
+    params = Parameters(
+        world_width=5,
+        world_height=5,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+        runtime_learning_rate=0.8,
+        runtime_learning_decay=1.0,
+        runtime_penalty_failed_action=1.5,
+        runtime_reward_action_success=0.2,
+        runtime_penalty_idle=0.8,
+        runtime_penalty_blocked_idle=1.2,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=3,
+        y=2,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(3, 2)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.IDLE,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=0.9,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_LEFT,
+            ),
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.invalidate_spatial_index()
+
+    world.step_world()
+    assert creature.last_action == ActionType.IDLE
+    assert creature.last_action_success is True
+    assert creature.blocked_forward_ticks == 1
+    assert creature.learned_biases[0] < 0.0
+    assert creature.reward_history[-1] < -1.0
+
+    world.step_world()
+    assert creature.last_action == ActionType.TURN_LEFT
+    assert creature.last_action_success is True
+    assert creature.blocked_forward_ticks == 0
+    assert creature.learned_biases[1] > 0.0
+
+def test_runtime_learning_rewards_food_without_erasing_it_on_next_bad_tick():
+    params = Parameters(
+        world_width=5,
+        world_height=5,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+        move_energy_base_cost=0.0,
+        move_energy_area_scale=0.0,
+        runtime_learning_rate=0.5,
+        runtime_learning_decay=0.95,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=2,
+        y=2,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(2, 2)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.MOVE,
+            )
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.food_cells = {(3, 2)}
+    world.invalidate_spatial_index()
+
+    world.step_world()
+    positive_trace = creature.reward_trace
+    positive_bias = creature.learned_biases[0]
+    assert positive_trace > 0.0
+    assert positive_bias > 0.0
+    assert creature.reward_history[-1] > 0.0
+
+    world.step_world()
+    assert creature.last_action == ActionType.IDLE
+    assert creature.last_action_success is True
+    assert creature.learned_biases[0] < positive_bias
+    assert creature.reward_trace < positive_trace
+    assert creature.reward_trace > 0.0
 
 def test_epoch_fitness_rewards_mixed_outcomes():
     params = Parameters(initial_energy=100.0)
