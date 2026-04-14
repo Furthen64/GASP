@@ -133,6 +133,8 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.runtime_learning_rate == 0.4
     assert params.runtime_learning_decay == 0.92
     assert params.runtime_reward_food == 25.0
+    assert params.runtime_reward_escape_wall == 2.5
+    assert params.runtime_reward_turn_to_open_space == 0.8
     assert params.runtime_penalty_failed_action == 1.4
     assert params.runtime_penalty_blocked_idle == 1.2
     assert params.runtime_stagnation_window == 5
@@ -578,6 +580,111 @@ def test_stagnation_fallback_breaks_idle_only_loop():
     assert action != ActionType.IDLE
     assert next_state is None
     assert selected_unit_index is None
+
+def test_turning_away_from_wall_gets_positive_runtime_feedback():
+    params = Parameters(
+        world_width=6,
+        world_height=6,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+        runtime_reward_action_success=0.0,
+        runtime_penalty_idle=0.0,
+        runtime_penalty_failed_action=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=4,
+        y=2,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(4, 2)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.WALL_AHEAD,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=2.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_LEFT,
+            )
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.invalidate_spatial_index()
+
+    world.step_world()
+
+    assert creature.last_action == ActionType.TURN_LEFT
+    assert creature.last_reward > 0.0
+    assert creature.learned_action_biases['TURN_LEFT'] > 0.0
+
+
+def test_successful_wall_escape_changes_future_action_preference():
+    params = Parameters(
+        world_width=6,
+        world_height=6,
+        initial_creature_count=0,
+        max_creatures=1,
+        initial_food_count=0,
+        initial_toxic_count=0,
+        food_spawn_rate=0.0,
+        toxic_spawn_rate=0.0,
+        energy_per_tick=0.0,
+        runtime_learning_rate=0.8,
+        runtime_learning_decay=1.0,
+        runtime_reward_action_success=0.0,
+        runtime_penalty_failed_action=0.0,
+        runtime_penalty_idle=0.0,
+    )
+    world = World(params)
+    world.initialize_default()
+
+    creature = Creature(
+        id=1,
+        x=4,
+        y=2,
+        facing=Facing.E,
+        energy=100.0,
+        visited_positions=[(4, 2)],
+        chromosome=[
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.TURN_LEFT,
+            ),
+            Unit(
+                promoter=Promoter(
+                    signal_id=SignalId.ENERGY,
+                    compare_op=CompareOp.GT,
+                    threshold=0.0,
+                    base_strength=1.0,
+                ),
+                target_type='gene',
+                gene=ActionType.IDLE,
+            ),
+        ],
+    )
+    world.creatures = {creature.id: creature}
+    world.invalidate_spatial_index()
+
+    world.step_world()
+
+    assert creature.learned_action_biases['TURN_LEFT'] > creature.learned_action_biases['IDLE']
 
 def test_epoch_fitness_rewards_mixed_outcomes():
     params = Parameters(initial_energy=100.0)

@@ -52,6 +52,8 @@ class Parameters:
     runtime_reward_food: float = 25.0
     runtime_reward_new_cell: float = 1.0
     runtime_reward_reproduce: float = 3.0
+    runtime_reward_escape_wall: float = 2.5
+    runtime_reward_turn_to_open_space: float = 0.8
     runtime_penalty_failed_action: float = 1.4
     runtime_penalty_idle: float = 2.5
     runtime_penalty_blocked_idle: float = 1.2

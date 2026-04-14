@@ -64,6 +64,7 @@ def test_save_load_gamestate():
     assert loaded.states_seen == original.states_seen
     assert loaded.visited_positions == original.visited_positions
     assert loaded.learned_biases == original.learned_biases
+    assert loaded.learned_action_biases == original.learned_action_biases
     assert loaded.reward_history == original.reward_history
     assert loaded.reward_trace == original.reward_trace
     assert loaded.last_reward == original.last_reward

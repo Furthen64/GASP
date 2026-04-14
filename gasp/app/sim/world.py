@@ -497,10 +497,18 @@ class World:
         elif len(current) > bias_count:
             current = current[:bias_count]
         creature.learned_biases = current
+        action_biases = dict(getattr(creature, 'learned_action_biases', {}))
+        for action in ActionType:
+            action_biases.setdefault(action.name, 0.0)
+        creature.learned_action_biases = action_biases
 
     def _unit_runtime_strength(self, creature, unit_index: int, unit) -> float:
         self._ensure_runtime_learning_state(creature)
         return unit.promoter.base_strength + creature.learned_biases[unit_index]
+
+    def _action_runtime_adjustment(self, creature, action: ActionType) -> float:
+        self._ensure_runtime_learning_state(creature)
+        return creature.learned_action_biases.get(action.name, 0.0) + self._stagnation_action_adjustment(creature, action)
 
     def _recent_reward_stagnation(self, creature) -> tuple[bool, list[float], list[dict]]:
         window = max(1, int(getattr(self.params, 'runtime_stagnation_window', 5)))
@@ -600,7 +608,7 @@ class World:
                     unit.gene,
                     unit.next_state,
                     unit_index,
-                    base_score + self._stagnation_action_adjustment(creature, unit.gene),
+                    base_score + self._action_runtime_adjustment(creature, unit.gene),
                 ))
             elif unit.target_type == 'module' and unit.module_id in DEFAULT_MODULES:
                 module_actions = DEFAULT_MODULES[unit.module_id]
@@ -609,7 +617,7 @@ class World:
                         action,
                         unit.next_state,
                         unit_index,
-                        base_score + self._stagnation_action_adjustment(creature, action),
+                        base_score + self._action_runtime_adjustment(creature, action),
                     ))
 
         ranked_candidates.sort(key=lambda item: item[3], reverse=True)
@@ -636,7 +644,7 @@ class World:
                     action_scores[at] = (current_score + per_action, next_unit_index)
         if action_scores:
             action_scores = {
-                action: (score + self._stagnation_action_adjustment(creature, action), unit_index)
+                action: (score + self._action_runtime_adjustment(creature, action), unit_index)
                 for action, (score, unit_index) in action_scores.items()
             }
         return action_scores
@@ -700,6 +708,8 @@ class World:
         start_food_eaten: int,
         start_pregnancies: int,
         blocked_forward: bool,
+        turned_toward_open_space: bool,
+        escaped_blocked_front: bool,
         toxic_hit: bool,
     ) -> float:
         reward = 0.0
@@ -722,23 +732,35 @@ class World:
         if discovered_new_position:
             reward += self.params.runtime_reward_new_cell
 
+        if turned_toward_open_space:
+            reward += self.params.runtime_reward_turn_to_open_space
+
+        if escaped_blocked_front:
+            reward += self.params.runtime_reward_escape_wall
+
         if toxic_hit:
             reward -= self.params.runtime_penalty_toxic
 
         return reward
 
-    def _apply_runtime_learning(self, creature, unit_index: int | None, reward: float):
+    def _apply_runtime_learning(self, creature, action: ActionType, unit_index: int | None, reward: float):
         self._ensure_runtime_learning_state(creature)
         decay = max(0.0, min(1.0, float(self.params.runtime_learning_decay)))
         creature.learned_biases = [bias * decay for bias in creature.learned_biases]
+        creature.learned_action_biases = {
+            action_name: bias * decay
+            for action_name, bias in creature.learned_action_biases.items()
+        }
         creature.last_reward = reward
         creature.reward_trace = creature.reward_trace * decay + reward
         creature.reward_history.append(reward)
         if len(creature.reward_history) > 200:
             creature.reward_history.pop(0)
+        learning_rate = max(0.0, float(self.params.runtime_learning_rate))
+        action_bias = creature.learned_action_biases.get(action.name, 0.0) + reward * learning_rate
+        creature.learned_action_biases[action.name] = max(-6.0, min(6.0, action_bias))
         if unit_index is None or not creature.learned_biases:
             return
-        learning_rate = max(0.0, float(self.params.runtime_learning_rate))
         updated_bias = creature.learned_biases[unit_index] + reward * learning_rate
         creature.learned_biases[unit_index] = max(-6.0, min(6.0, updated_bias))
 
@@ -837,6 +859,7 @@ class World:
 
             # e. execute action
             phase_start = perf_counter()
+            sensed_before_action = dict(creature.sensed)
             start_position = (creature.x, creature.y)
             start_food_eaten = creature.food_eaten
             start_pregnancies = creature.pregnancies_completed
@@ -849,6 +872,18 @@ class World:
             discovered_new_position = current_position not in creature.visited_positions
             if current_position not in creature.visited_positions:
                 creature.visited_positions.append(current_position)
+            post_action_sensed = compute_sensed(creature, self)
+            turned_toward_open_space = (
+                success and action == ActionType.TURN_LEFT and sensed_before_action.get('wall_ahead', 0) > 0
+                and sensed_before_action.get('free_left', 0) > sensed_before_action.get('free_right', 0)
+            ) or (
+                success and action == ActionType.TURN_RIGHT and sensed_before_action.get('wall_ahead', 0) > 0
+                and sensed_before_action.get('free_right', 0) > sensed_before_action.get('free_left', 0)
+            )
+            escaped_blocked_front = (
+                success and action in (ActionType.TURN_LEFT, ActionType.TURN_RIGHT)
+                and blocked_forward and bool(post_action_sensed.get('can_move_forward', 0))
+            )
             action_ms += (perf_counter() - phase_start) * 1000.0
 
             # f. update energy, fitness
@@ -873,9 +908,11 @@ class World:
                 start_food_eaten,
                 start_pregnancies,
                 blocked_forward,
+                turned_toward_open_space,
+                escaped_blocked_front,
                 toxic_hit,
             )
-            self._apply_runtime_learning(creature, selected_unit_index, reward)
+            self._apply_runtime_learning(creature, action, selected_unit_index, reward)
             toxic_ms += (perf_counter() - phase_start) * 1000.0
 
             # g. check death
