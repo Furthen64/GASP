@@ -220,7 +220,7 @@ class World:
             height=1,
             facing=Facing.N,
             energy=self.params.initial_energy,
-            chromosome=copy.deepcopy(chromosome),
+            chromosome=chromosome,
             debug_color=debug_color,
             states_seen=[0],
             visited_positions=[(0, 0)],
@@ -236,7 +236,7 @@ class World:
         mutation_rate = self.params.epoch_elite_mutation_rate
         next_population = [
             self._make_epoch_creature(
-                best.chromosome,
+                copy.deepcopy(best.chromosome),
                 [best.id],
                 best.generation + 1,
                 best.debug_color,
@@ -244,7 +244,7 @@ class World:
         ]
 
         if second and len(next_population) < population_size:
-            crossover_one = crossover(best.chromosome, second.chromosome, self.rng)
+            crossover_one = [copy.deepcopy(unit) for unit in crossover(best.chromosome, second.chromosome, self.rng)]
             next_population.append(
                 self._make_epoch_creature(
                     crossover_one,
@@ -255,7 +255,7 @@ class World:
             )
 
         if second and len(next_population) < population_size:
-            crossover_two = crossover(second.chromosome, best.chromosome, self.rng)
+            crossover_two = [copy.deepcopy(unit) for unit in crossover(second.chromosome, best.chromosome, self.rng)]
             next_population.append(
                 self._make_epoch_creature(
                     crossover_two,

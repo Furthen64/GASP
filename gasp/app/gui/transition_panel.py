@@ -1,7 +1,8 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QGroupBox, QFormLayout, QTextEdit,
-    QCheckBox, QHBoxLayout, QSlider, QDoubleSpinBox
+    QCheckBox, QHBoxLayout, QSlider, QDoubleSpinBox, QSizePolicy
+    , QScrollArea
 )
 
 
@@ -13,11 +14,17 @@ class TransitionPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        self.setMinimumWidth(420)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        scroll.setWidget(container)
+        layout.addWidget(scroll)
+        content_layout = QVBoxLayout(container)
 
         settings_group = QGroupBox("Transition Settings")
         settings_layout = QVBoxLayout(settings_group)
-        settings_group.setMinimumHeight(220)
 
         plan_label = QLabel(
             "Next epoch plan:\n"
@@ -49,6 +56,7 @@ class TransitionPanel(QWidget):
         mutation_form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         mutation_form.setHorizontalSpacing(14)
         mutation_form.setVerticalSpacing(10)
+        mutation_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self._elite_mutation_rate = QDoubleSpinBox()
         self._elite_mutation_rate.setRange(0.0, 10000.0)
         self._elite_mutation_rate.setDecimals(4)
@@ -56,31 +64,33 @@ class TransitionPanel(QWidget):
         self._elite_mutation_rate.valueChanged.connect(self.elite_mutation_rate_changed)
         mutation_form.addRow(self._make_row_label("Best-child mutation rate:"), self._elite_mutation_rate)
         settings_layout.addLayout(mutation_form)
-        layout.addWidget(settings_group)
+        content_layout.addWidget(settings_group)
 
         current_group = QGroupBox("Current Epoch")
         current_form = QFormLayout(current_group)
         current_form.setHorizontalSpacing(14)
         current_form.setVerticalSpacing(8)
+        current_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self._current_labels = {}
         for field in ['Epoch', 'Seed', 'Step', 'Living', 'Total Creatures', 'Elapsed', 'Lifespan', 'Mutation Rate']:
             label = QLabel('-')
             label.setWordWrap(True)
             current_form.addRow(self._make_row_label(f"{field}:"), label)
             self._current_labels[field] = label
-        layout.addWidget(current_group)
+        content_layout.addWidget(current_group)
 
         last_group = QGroupBox("Last Transition")
         last_form = QFormLayout(last_group)
         last_form.setHorizontalSpacing(14)
         last_form.setVerticalSpacing(8)
+        last_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self._last_labels = {}
         for field in ['Epoch', 'Seed', 'Steps Survived', 'Best Creature', 'Best Selection Score', 'Best Distance', 'Best Unique Positions', 'Best Food', 'Best Pregnancies', 'Selection Breakdown', 'Parents Used', 'Mutation Rate']:
             label = QLabel('-')
             label.setWordWrap(True)
             last_form.addRow(self._make_row_label(f"{field}:"), label)
             self._last_labels[field] = label
-        layout.addWidget(last_group)
+        content_layout.addWidget(last_group)
 
         history_group = QGroupBox("Recent Transitions")
         history_layout = QVBoxLayout(history_group)
@@ -88,13 +98,13 @@ class TransitionPanel(QWidget):
         self._history_text.setReadOnly(True)
         self._history_text.setMaximumHeight(160)
         history_layout.addWidget(self._history_text)
-        layout.addWidget(history_group)
-        layout.addStretch()
+        content_layout.addWidget(history_group)
+        content_layout.addStretch()
 
     def _make_row_label(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setWordWrap(True)
-        label.setMinimumWidth(150)
+        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         return label
 
     def _on_lifespan_changed(self, value):

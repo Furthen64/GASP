@@ -132,7 +132,7 @@ def test_default_parameters_favor_sparse_epoch_runs():
     assert params.epoch_fitness_idle_penalty == 4.0
     assert params.runtime_learning_rate == 0.4
     assert params.runtime_learning_decay == 0.92
-    assert params.runtime_reward_food == 5.0
+    assert params.runtime_reward_food == 25.0
     assert params.runtime_penalty_failed_action == 1.4
     assert params.runtime_penalty_blocked_idle == 1.2
     assert params.runtime_stagnation_window == 5
@@ -306,6 +306,8 @@ def test_next_epoch_builds_clone_crossover_and_mutated_children():
     assert len(clones) == 1
     assert len(crossovers) == 2
     assert len(mutated_best) == 2
+    assert clones[0].chromosome is not best.chromosome
+    assert clones[0].chromosome[0] is not best.chromosome[0]
 
 
 def test_next_epoch_uses_mutated_best_children_when_only_one_parent_exists():

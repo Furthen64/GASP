@@ -18,6 +18,8 @@ from gasp.app.util.perf import RollingTimingWindow, TimingSnapshot, humanize_pha
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+        self.setMaximumSize(16777215, 16777215)
         self.setWindowTitle("GASP v1 - Genetic Algorithm Simulation Platform")
         self.resize(1200, 800)
         self.params = Parameters()
